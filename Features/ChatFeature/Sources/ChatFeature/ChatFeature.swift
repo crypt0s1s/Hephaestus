@@ -165,9 +165,7 @@ public struct ProviderSettingsPanelState: Equatable {
 
 public struct RunInspectorPanelState: Equatable {
     public var isPresented: Bool
-    public var isLoading: Bool
-    public var inspection: PersistedRunInspection?
-    public var errorMessage: String?
+    public var loadState: StoreState<PersistedRunInspection?, ChatPageError>
 
     public init(
         isPresented: Bool = false,
@@ -176,9 +174,32 @@ public struct RunInspectorPanelState: Equatable {
         errorMessage: String? = nil
     ) {
         self.isPresented = isPresented
-        self.isLoading = isLoading
-        self.inspection = inspection
-        self.errorMessage = errorMessage
+        if let errorMessage {
+            loadState = .error(ChatPageError(errorMessage))
+        } else if isLoading {
+            loadState = .loading(placeholder: inspection)
+        } else {
+            loadState = .loaded(inspection)
+        }
+    }
+
+    public var isLoading: Bool {
+        loadState.isLoading
+    }
+
+    public var inspection: PersistedRunInspection? {
+        switch loadState {
+        case .loading(let placeholder):
+            return placeholder ?? nil
+        case .loaded(let inspection):
+            return inspection
+        case .error:
+            return nil
+        }
+    }
+
+    public var errorMessage: String? {
+        loadState.failure?.description
     }
 }
 
@@ -1119,9 +1140,9 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
     private let router: Router<AnyRouteInput, AnyModalInput>
     private var didLoadInitialState = false
     private var selectedService: ChatSessionService?
-    private var selectedSnapshotTask: Task<Void, Never>?
-    private var summaryTask: Task<Void, Never>?
-    private var lifecycleTask: Task<Void, Never>?
+    private var selectedSnapshotTaskID: UUID?
+    private var summaryTaskID: UUID?
+    private var lifecycleTaskID: UUID?
 
     public init(
         input: ChatRouteInput,
@@ -1145,10 +1166,11 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
 
     public override func onAppear() {
         attachToSessionSummaries()
-        lifecycleTask?.cancel()
+        cancelPageTask(lifecycleTaskID)
+        lifecycleTaskID = nil
         if didLoadInitialState {
             if let runID = state.runID {
-                lifecycleTask = Task { [weak self] in
+                lifecycleTaskID = runPageTask { [weak self] in
                     await self?.attachToService(id: runID, force: true, resetDraft: false)
                 }
             }
@@ -1156,17 +1178,17 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
         }
 
         didLoadInitialState = true
-        lifecycleTask = Task { [weak self] in
+        lifecycleTaskID = runPageTask { [weak self] in
             await self?.loadInitialState()
         }
     }
 
     public override func onDisappear() {
-        lifecycleTask?.cancel()
-        lifecycleTask = nil
+        cancelPageTask(lifecycleTaskID)
+        lifecycleTaskID = nil
         detachSelectedService()
-        summaryTask?.cancel()
-        summaryTask = nil
+        cancelPageTask(summaryTaskID)
+        summaryTaskID = nil
         super.onDisappear()
     }
 
@@ -1294,7 +1316,7 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
     private func attach(to service: ChatSessionService, resetDraft: Bool) {
         detachSelectedService()
         selectedService = service
-        selectedSnapshotTask = Task { [weak self, service] in
+        selectedSnapshotTaskID = runPageTask { [weak self, service] in
             for await snapshot in service.subscribeSnapshots() {
                 self?.apply(snapshot)
             }
@@ -1310,14 +1332,14 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
     }
 
     private func detachSelectedService() {
-        selectedSnapshotTask?.cancel()
-        selectedSnapshotTask = nil
+        cancelPageTask(selectedSnapshotTaskID)
+        selectedSnapshotTaskID = nil
         selectedService = nil
     }
 
     private func attachToSessionSummaries() {
-        summaryTask?.cancel()
-        summaryTask = Task { [weak self] in
+        cancelPageTask(summaryTaskID)
+        summaryTaskID = runPageTask { [weak self] in
             guard let self else { return }
             for await summaries in sessionRegistry.subscribeSummaries() {
                 setState {
@@ -1437,19 +1459,16 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
         guard let runID = state.runID, let inspectRun else { return }
         setState {
             $0.inspector.isPresented = true
-            $0.inspector.isLoading = true
-            $0.inspector.errorMessage = nil
+            $0.inspector.loadState = .loading(placeholder: $0.inspector.inspection)
         }
         do {
             let inspection = try await inspectRun.inspectRun(sessionID: runID)
             setState {
-                $0.inspector.inspection = inspection
-                $0.inspector.isLoading = false
+                $0.inspector.loadState = .loaded(inspection)
             }
         } catch {
             setState {
-                $0.inspector.errorMessage = String(describing: error)
-                $0.inspector.isLoading = false
+                $0.inspector.loadState = .error(ChatPageError(error))
             }
         }
     }

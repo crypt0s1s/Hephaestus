@@ -6,12 +6,19 @@ public final class PageTaskScope {
 
     public init() {}
 
-    public func run(_ operation: @escaping @MainActor () async -> Void) {
+    @discardableResult
+    public func run(_ operation: @escaping @MainActor () async -> Void) -> UUID {
         let id = UUID()
         tasks[id] = Task { [self] in
             await operation()
             removeTask(id)
         }
+        return id
+    }
+
+    public func cancel(_ id: UUID) {
+        tasks[id]?.cancel()
+        tasks[id] = nil
     }
 
     public func cancelAll() {

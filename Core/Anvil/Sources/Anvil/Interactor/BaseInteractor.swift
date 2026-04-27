@@ -30,4 +30,14 @@ open class BaseInteractor<State, Action>: ObservableObject {
     public func setState(_ update: (inout State) -> Void) {
         update(&state)
     }
+
+    @discardableResult
+    public func runPageTask(_ operation: @escaping @MainActor () async -> Void) -> UUID {
+        taskScope.run(operation)
+    }
+
+    public func cancelPageTask(_ id: UUID?) {
+        guard let id else { return }
+        taskScope.cancel(id)
+    }
 }
