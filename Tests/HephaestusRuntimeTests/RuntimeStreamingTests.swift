@@ -141,14 +141,34 @@ struct RuntimeStreamingTests {
 
     @Test
     @MainActor
+    func chatRouteRequiresAppLifetimeSessionRegistry() throws {
+        let registry = try DestinationRegistry(
+            routes: [ChatRoutes.registration],
+            modals: []
+        )
+        let input = try AnyRouteInput(ChatRouteInput(runID: nil))
+        let context = RouteBuildContext(router: Router<AnyRouteInput, AnyModalInput>()) { type in
+            throw RouteBuildError.missingDependency(String(describing: type))
+        }
+
+        #expect(throws: RouteBuildError.missingDependency("ChatSessionServiceRegistry")) {
+            _ = try registry.buildRoute(input, context: context)
+        }
+    }
+
+    @Test
+    @MainActor
     func tapSendMarksRunningBeforeAwaitingRunCreation() async throws {
         let runID = UUID()
         let createRun = BlockingCreateRunUseCase(runID: runID)
         let streamUserMessage = RecordingStreamUserMessageUseCase()
+        let sessionRegistry = ChatSessionServiceRegistry(
+            createRun: createRun,
+            streamUserMessage: streamUserMessage
+        )
         let interactor = ChatPageInteractor(
             input: ChatRouteInput(runID: nil),
-            createRun: createRun,
-            streamUserMessage: streamUserMessage,
+            sessionRegistry: sessionRegistry,
             router: Router<AnyRouteInput, AnyModalInput>()
         )
 
@@ -175,10 +195,13 @@ struct RuntimeStreamingTests {
     func tapSendIgnoresEmptyDraft() async throws {
         let createRun = BlockingCreateRunUseCase(runID: UUID())
         let streamUserMessage = RecordingStreamUserMessageUseCase()
+        let sessionRegistry = ChatSessionServiceRegistry(
+            createRun: createRun,
+            streamUserMessage: streamUserMessage
+        )
         let interactor = ChatPageInteractor(
             input: ChatRouteInput(runID: nil),
-            createRun: createRun,
-            streamUserMessage: streamUserMessage,
+            sessionRegistry: sessionRegistry,
             router: Router<AnyRouteInput, AnyModalInput>()
         )
 
@@ -197,10 +220,13 @@ struct RuntimeStreamingTests {
         let runID = UUID()
         let createRun = BlockingCreateRunUseCase(runID: runID)
         let streamUserMessage = RecordingStreamUserMessageUseCase()
+        let sessionRegistry = ChatSessionServiceRegistry(
+            createRun: createRun,
+            streamUserMessage: streamUserMessage
+        )
         let interactor = ChatPageInteractor(
             input: ChatRouteInput(runID: nil),
-            createRun: createRun,
-            streamUserMessage: streamUserMessage,
+            sessionRegistry: sessionRegistry,
             router: Router<AnyRouteInput, AnyModalInput>()
         )
 

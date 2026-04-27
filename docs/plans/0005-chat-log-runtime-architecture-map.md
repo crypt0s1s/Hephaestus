@@ -1,22 +1,24 @@
 # Chat Log Runtime Architecture Map
 
-**Status:** Current-state map
+**Status:** Current service-flow map
 **Date:** 2026-04-27
 **Related PRDs:** [PRD-0004](../prd/0004-persistent-chats-and-runs.md), [PRD-0005](../prd/0005-context-management-v1.md), [PRD-0006](../prd/0006-run-inspection.md), [PRD-0007](../prd/0007-chat-experience-ux-v1.md)
-**Related ADRs:** [ADR-0004](../adr/0004-swiftui-interactor-page-architecture.md), [ADR-0007](../adr/0007-headless-runtime-entrypoint.md), [ADR-0008](../adr/0008-local-app-state-storage.md)
+**Related ADRs:** [ADR-0004](../adr/0004-swiftui-interactor-page-architecture.md), [ADR-0007](../adr/0007-headless-runtime-entrypoint.md), [ADR-0008](../adr/0008-local-app-state-storage.md), [ADR-0009](../adr/0009-persistent-chat-session-service.md)
 
 ## Purpose
 
-This document maps the current chat log, runtime event, persistence, and UI projection flow. It is not a new architecture decision. It exists to make the current seams visible before the chat subsystem grows further.
+This document maps the current chat log, runtime event, persistence, service, and UI projection flow. It is not a new architecture decision. It exists to keep the current seams visible as the chat subsystem grows.
 
-The short version: the runtime is run-keyed, the persisted state is session-keyed, and the SwiftUI page currently renders one mutable selected-session projection. Recent bugs came from that selected projection being updated by work that belonged to a different run.
+The short version: the runtime is run-keyed, persisted state is session-keyed, and the SwiftUI page now renders the latest snapshot from a per-chat service selected through an app-lifetime registry. Runtime stream ownership moved out of `ChatPageInteractor`.
 
 ## Current Components
 
 | Component | Package / File | Responsibility |
 | --- | --- | --- |
 | `ChatPage` | `Features/ChatFeature/.../ChatFeature.swift` | Renders the sidebar, selected transcript, composer, provider settings, and inspector. |
-| `ChatPageInteractor` | `Features/ChatFeature/.../ChatFeature.swift` | Owns current page state and translates UI actions into runtime use-case calls. |
+| `ChatPageInteractor` | `Features/ChatFeature/.../ChatFeature.swift` | Owns current page render state, attaches/detaches selected service snapshots, and forwards user intents. |
+| `ChatSessionServiceRegistry` | `Features/ChatFeature/.../ChatSessionService.swift` | App-lifetime factory/cache for per-chat services and sidebar summary state. |
+| `ChatSessionService` | `Features/ChatFeature/.../ChatSessionService.swift` | Session/run-lifetime owner of chat IO tasks, runtime event application, live transcript snapshots, and explicit cancellation. |
 | `PersistentAppRuntime` | `Hephaestus/HephaestusAppShell.swift` | App-level adapter that exposes runtime use cases to the route context and lazily builds the active runtime harness. |
 | `PersistentRuntimeHarness` | `Core/HephaestusComposition/.../RuntimeComposition.swift` | Composes store, run store, provider, event hub, and persistent use cases. |
 | `Run` | `Core/HephaestusKernel/.../Kernel.swift` | In-memory turn executor for one agent conversation. Emits `RunEvent`s. |
@@ -32,7 +34,7 @@ There are three related but distinct concepts:
 | --- | --- | --- | --- |
 | Runtime run | `runID` | `Run`, `InMemoryRunStore`, `RuntimeEventHeader` | The active execution identity. For persisted chats, this is the same UUID as the session ID. |
 | Persisted session | `PersistedSession.id` | `AppStateStore` | Durable chat log and inspection record. |
-| Selected UI projection | `ChatPageState.runID` + `ChatPageState.messages` | `ChatPageInteractor` | The visible transcript. This is a projection, not the source of truth. |
+| Selected UI projection | `ChatPageState.runID` + `ChatPageState.selectedSnapshot` | `ChatPageInteractor` | The visible transcript projection from the selected service snapshot. |
 
 This split is useful, but it is also where the recent cross-chat streaming bug came from. Runtime events were correctly tagged with `runID`, but the UI applied them to whichever `ChatPageState.messages` happened to be visible.
 
@@ -43,6 +45,8 @@ sequenceDiagram
     participant User
     participant Page as ChatPage
     participant Interactor as ChatPageInteractor
+    participant Registry as ChatSessionServiceRegistry
+    participant Service as ChatSessionService
     participant AppRuntime as PersistentAppRuntime
     participant UseCase as PersistentStreamUserMessageUseCase
     participant Run
@@ -51,8 +55,10 @@ sequenceDiagram
 
     User->>Page: Send message
     Page->>Interactor: .tapSend
-    Interactor->>Interactor: ensureRun()
-    Interactor->>AppRuntime: streamUserMessage(runID, text)
+    Interactor->>Registry: selected service or create service
+    Registry-->>Interactor: ChatSessionService
+    Interactor->>Service: send(text)
+    Service->>AppRuntime: streamUserMessage(runID, text)
     AppRuntime->>UseCase: streamUserMessage(runID, text)
     UseCase->>Run: streamUserMessage(text)
     Run-->>UseCase: RunEvent stream
@@ -60,10 +66,12 @@ sequenceDiagram
         UseCase->>UseCase: RuntimeEvent(event)
         UseCase->>Store: persist(event, sessionID: runID)
         UseCase->>Hub: publish(runtimeEvent, runID)
-        UseCase-->>Interactor: yield runtimeEvent
-        Interactor->>Interactor: apply event if visible run still matches
+        UseCase-->>Service: yield runtimeEvent
+        Service->>Service: apply event to session snapshot
+        Service-->>Interactor: publish snapshot while attached
     end
-    Interactor->>AppRuntime: listSessions()
+    Service->>Registry: summary changed
+    Registry->>AppRuntime: listSessions()
 ```
 
 Important details:
@@ -145,29 +153,27 @@ flowchart LR
     EventB --> Hub --> RunB
 ```
 
-The current `ChatPageInteractor` is mostly request/response streaming:
+The current `ChatSessionService` is request/response streaming:
 
-- It calls `streamUserMessage`.
-- It consumes that returned stream.
-- It mutates the selected visible transcript directly.
+- it calls `streamUserMessage`,
+- it consumes the returned stream,
+- it mutates the per-chat snapshot, and
+- it publishes snapshots to any attached page interactor.
 
-The current page does not maintain an `observeRunEvents` subscription for the selected chat. That makes the code simple, but it also means that visible transcript state and persisted session state can diverge until the session is reloaded.
+The page does not maintain an `observeRunEvents` subscription. The service is now the long-lived owner of the direct stream path.
 
 ## Interactor Lifecycle Mismatch
 
-`ChatPageInteractor` is currently doing work that outlives the page lifecycle:
+`ChatPageInteractor` is page-lifecycle scoped:
 
-- it starts the send operation,
-- it consumes the returned stream,
-- it accumulates live transcript state,
-- it owns the selected page's `isRunning` and error state, and
-- it refreshes session summaries after the operation completes.
+- it forwards `.tapSend`, `.tapChat`, `.tapNewChat`, and `.tapCancel`,
+- it subscribes to the selected service while visible,
+- it detaches on page disappearance, and
+- it keeps provider settings and inspector presentation page-local.
 
-That is too much ownership for an interactor that is naturally tied to a SwiftUI page. The page can disappear, be replaced, or eventually be deallocated while chat IO is still running. The durable behavior should belong to an app-lifetime or session-lifetime service, not to a view-lifetime adapter.
+The interactor can disappear without cancelling or corrupting a chat. Explicit cancel is routed to the selected service.
 
-The interactor should be allowed to disappear without cancelling or corrupting a chat unless the user explicitly cancels that chat's active turn.
-
-## Proposed Service Boundary
+## Service Boundary
 
 The next architecture should introduce a persistent service layer keyed by chat session or run. The page interactor attaches to that service while visible and detaches when the page disappears.
 
@@ -201,7 +207,7 @@ Suggested ownership:
 | `ChatPageState` | Page render state | Represents current navigation and the latest snapshot from the attached service. It should not be the authoritative chat log. |
 | `PersistentAppRuntime` | App/runtime lifetime | Provides runtime use cases and storage-backed behavior. It should not know about SwiftUI page lifecycle. |
 
-This changes the control model:
+The current control model:
 
 ```mermaid
 sequenceDiagram
@@ -235,8 +241,8 @@ These rules are now required for correctness:
 
 1. Runtime events must be tagged with the run they belong to.
 2. Persistence must write events to the session matching that run.
-3. UI stream application must verify the visible selected run still matches the submitted run.
-4. Switching chats replaces the selected projection from persisted session data.
+3. Runtime event application must happen inside the matching `ChatSessionService`.
+4. Switching chats detaches the old service subscription and attaches to the newly selected service snapshot.
 5. Opening a selected chat must be a no-op.
 6. Opening a different chat must not refresh the whole sidebar list.
 
@@ -246,83 +252,47 @@ These rules are now required for correctness:
 
 Symptom: send a message in chat A, switch to chat B while the response is in flight, then chat A's delayed response appears in chat B.
 
-Cause: the stream belonged to chat A, but `ChatPageInteractor.apply` mutated `ChatPageState.messages`, which represented the currently selected chat. It did not verify `event.header.runID`.
+Cause: the stream belonged to chat A, but the page interactor mutated `ChatPageState.messages`, which represented whichever chat was currently selected.
 
-Current patch: `apply(event, visibleRunID:)` only mutates visible transcript state when both `state.runID` and `event.header.runID` match the submitted run.
+Current fix: `ChatSessionService` owns runtime event application for one run/session, and `ChatPageInteractor` only observes the selected service snapshot while attached.
 
 ### Sidebar Loading Jump
 
 Symptom: selecting a chat made the sidebar briefly jump into loading.
 
-Cause: `handleOpenSession` called `refreshSessions()`, which flips `isLoadingSessions` for the entire sidebar.
+Cause: session selection refreshed the whole sidebar list, flipping the list into loading even though selection only needed the target session snapshot.
 
-Current patch: opening a session only loads that session. Sidebar refresh is reserved for initial load and list-changing actions.
+Current fix: opening a session attaches to the target service without refreshing summaries. Sidebar summary loading is owned by `ChatSessionServiceRegistry`.
 
 ## Architecture Risks
 
 These are not necessarily urgent defects, but they are revision candidates before the project gets deeper.
 
-### Interactor Owns Long-Lived Chat Work
-
-The biggest current risk is that the interactor owns stream consumption and live transcript mutation. That couples chat execution to page lifetime and will grow the interactor into a large coordination object as provider IO, context management, retries, cancellation, attachments, tools, and runtime inspection become richer.
-
-Revision candidate: move per-chat execution and live transcript ownership into `ChatSessionService`. The interactor should only attach, detach, and forward UI commands.
-
 ### One Selected Projection Is Doing Too Much
 
-`ChatPageState.messages` is both:
+`ChatPageState.messages` is still the render-friendly visible transcript, but it is now copied from:
 
-- the visible selected transcript, and
-- the transient live stream accumulator.
+- `ChatPageState.selectedSnapshot`, and
+- the selected `ChatSessionService` snapshot stream.
 
-That works for one chat, but becomes fragile when multiple sessions can have in-flight turns.
+The authoritative live projection is service-owned. Future UI work should prefer rendering directly from richer snapshot fields instead of adding new authoritative page caches.
 
-Revision candidate: introduce a UI-side session cache keyed by `runID`, for example:
+### Sidebar Does Not Yet Show Per-Chat Activity
 
-```swift
-struct ChatPageState {
-    var selectedRunID: UUID?
-    var sessions: [ChatSessionSummaryState]
-    var transcripts: [UUID: ChatTranscriptState]
-}
-```
+`ChatSessionService` tracks running state per selected service, but the sidebar summary row does not yet show "chat A is still responding while chat B is selected."
 
-Then events update `transcripts[event.header.runID]`, and the page renders `transcripts[selectedRunID]`.
+Revision candidate: add per-chat activity metadata to summary state, sourced from the registry/service cache rather than the page interactor.
 
-If we introduce `ChatSessionService`, this cache should probably live in the service layer rather than inside `ChatPageInteractor`.
-
-### No First-Class In-Flight Turn Model In UI
-
-`isRunning` is global to the selected page. It cannot represent "chat A is still responding while chat B is selected."
-
-Revision candidate: make in-flight status per session:
-
-```swift
-struct ChatTranscriptState {
-    var messages: [ChatMessageState]
-    var activeTurnID: UUID?
-    var isRunning: Bool
-    var errorMessage: String?
-}
-```
-
-The sidebar could then show a subtle per-chat activity indicator without hijacking the selected chat.
-
-### Returned Stream And EventHub Overlap
+### Direct Stream And EventHub Overlap
 
 There are two event delivery paths:
 
 - direct stream returned from `streamUserMessage`
 - pub/sub stream from `observeRunEvents`
 
-The current page uses the direct stream. This is fine for simple send handling, but it does not give the UI a unified model for background updates, multiple active chats, or reconnect/reload behavior.
+`ChatSessionService` currently owns the direct stream path. This is correct for the implemented slice, but it still means background updates that do not originate from a service command would need an additional observation path.
 
-Revision candidate: pick one primary UI update model:
-
-- command starts a turn, then a persistent chat service observes events by run ID and publishes snapshots; or
-- command returns a stream to the persistent chat service, and the service owns stream task routing by run ID.
-
-Both options are workable if the service is the owner. Returning a stream directly to a page interactor is the path to avoid.
+Revision candidate: if future runtime work can produce events independently of a service command, add a service-owned `observeRunEvents` subscription without reintroducing page-level runtime event handling.
 
 ### Persistence Updates Whole App State Per Event
 
@@ -334,37 +304,20 @@ Revision candidate: throttle or coalesce stream chunk persistence if provider ch
 
 ### Session List Is Pull-Based
 
-The sidebar list is refreshed by explicit calls. This means each action must remember whether it changed session summary data.
+The registry publishes summary state, but it still refreshes by calling `listSessions()` after known list-changing or summary-changing actions.
 
-Revision candidate: introduce a session-summary publisher or store observation layer. That would reduce manual `refreshSessions()` calls and avoid list refreshes in read-only flows.
+Revision candidate: introduce a storage-level session-summary publisher so the registry can react to state changes without manual refresh triggers.
 
-## Recommended Next Architecture Step
+## Implemented Architecture Step
 
-Before adding more chat UX or multi-agent behavior, decide the persistent chat service boundary.
+The persistent chat service boundary was accepted in [ADR-0009](../adr/0009-persistent-chat-session-service.md) and implemented in [Chat Session Service Refactor Plan](./0006-chat-session-service-refactor-plan.md).
 
-Recommended direction:
+The current direction is:
 
 1. Keep the runtime and persistence run-keyed/session-keyed model.
-2. Add an app-lifetime `ChatSessionServiceRegistry`.
-3. Add a session/run-lifetime `ChatSessionService` that owns chat IO, in-flight turn state, transcript projection, error state, cancellation, and runtime event application.
-4. Make `ChatPageInteractor` a page-lifetime adapter that subscribes to the selected service and forwards user intents.
+2. Use an app-lifetime `ChatSessionServiceRegistry`.
+3. Use a session/run-lifetime `ChatSessionService` for chat IO, in-flight turn state, transcript projection, error state, cancellation, and runtime event application.
+4. Keep `ChatPageInteractor` as a page-lifetime adapter that subscribes to the selected service and forwards user intents.
 5. Treat selected chat ID as navigation state only.
-6. Decide whether `ChatSessionService` consumes direct command streams or uses `observeRunEvents` as the primary update path.
-7. Define service eviction and recovery rules so long-running chats can survive page disappearance without leaking memory indefinitely.
-
-This is now ADR-sized. The decision changes ownership boundaries and lifecycle expectations, not just implementation details.
-
-The implementation sequence is tracked in [Chat Session Service Refactor Plan](./0006-chat-session-service-refactor-plan.md).
-
-## ADR Candidate
-
-Title: `Persistent Chat Session Service And UI Subscription Boundary`
-
-The ADR should decide:
-
-1. Whether per-chat services are actors, `@MainActor` observable reference types, or a split between a background actor and main-actor snapshot publisher.
-2. Whether the primary event path is direct command streams, `RuntimeEventHub.observeRunEvents`, or a hybrid where commands return task identity and services subscribe to events.
-3. How services are keyed: persisted session ID, runtime run ID, or a dedicated chat instance ID.
-4. How services are created, retained, and evicted by the app shell.
-5. How cancellation behaves when a page disappears versus when the user explicitly stops a chat.
-6. How persisted state and in-memory snapshots reconcile after app restart or service eviction.
+6. Keep direct stream consumption inside `ChatSessionService` for now.
+7. Defer service eviction until there is concrete pressure to add it.

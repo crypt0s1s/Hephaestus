@@ -189,6 +189,41 @@ struct PersistentRuntimeTests {
         #expect(inspection.session.turns.last?.status == .failed)
     }
 
+    @Test
+    func cancellingPersistentStreamPersistsCancelledTurnAndEvent() async throws {
+        let store = InMemoryAppStateStore()
+        let harness = RuntimeComposition.makePersistentMock(
+            store: store,
+            delayNanoseconds: 200_000_000
+        )
+        let session = try await harness.createSession.createSession(title: nil)
+        let stream = try await harness.streamUserMessage.streamUserMessage(
+            runID: session.id,
+            text: "cancel persistently"
+        )
+        let collector = Task {
+            await collectCatching(stream)
+        }
+
+        await waitUntil {
+            let state = try? await store.load()
+            return state?.sessions.first?.providerRequests.isEmpty == false
+        }
+
+        collector.cancel()
+        _ = await collector.value
+
+        await waitUntil {
+            let inspection = try? await harness.inspectRun.inspectRun(sessionID: session.id)
+            return inspection?.orderedEvents.contains(where: { $0.kind == .turnCancelled }) == true
+                && inspection?.session.turns.last?.status == .cancelled
+        }
+
+        let inspection = try await harness.inspectRun.inspectRun(sessionID: session.id)
+        #expect(inspection.orderedEvents.contains(where: { $0.kind == .turnCancelled }))
+        #expect(inspection.session.turns.last?.status == .cancelled)
+    }
+
     private func temporaryStateFileURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("hephaestus-\(UUID().uuidString)", isDirectory: true)
@@ -233,6 +268,19 @@ struct PersistentRuntimeTests {
         } catch {
             return (events, error)
         }
+    }
+
+    private func waitUntil(
+        _ predicate: @escaping () async -> Bool,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async {
+        for _ in 0..<100 {
+            if await predicate() {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        Issue.record("Timed out waiting for state transition", sourceLocation: sourceLocation)
     }
 }
 

@@ -12,10 +12,18 @@ struct HephaestusAppShell: View {
 
     private let registry: DestinationRegistry
     private let runtime: PersistentAppRuntime
+    private let chatSessionRegistry: ChatSessionServiceRegistry
     private let startupRoute: AnyRouteInput
 
     init() throws {
         runtime = try PersistentAppRuntime(store: FileAppStateStore(fileURL: Self.defaultAppStateURL))
+        chatSessionRegistry = ChatSessionServiceRegistry(
+            createRun: runtime,
+            streamUserMessage: runtime,
+            listSessions: runtime,
+            loadSession: runtime,
+            createSession: runtime
+        )
         registry = try DestinationRegistry(
             routes: [ChatRoutes.registration],
             modals: [ChatRoutes.settingsModalRegistration]
@@ -58,6 +66,8 @@ struct HephaestusAppShell: View {
                 return runtime
             } else if type == InspectRunUseCase.self {
                 return runtime
+            } else if type == ChatSessionServiceRegistry.self {
+                return chatSessionRegistry
             } else {
                 throw RouteBuildError.missingDependency(String(describing: type))
             }

@@ -1,31 +1,29 @@
 # Chat Session Service Refactor Plan
 
-**Status:** Draft
+**Status:** Implemented
 **Date:** 2026-04-27
 **Related Architecture Map:** [Chat Log Runtime Architecture Map](./0005-chat-log-runtime-architecture-map.md)
-**Related ADRs:** [ADR-0004](../adr/0004-swiftui-interactor-page-architecture.md), [ADR-0007](../adr/0007-headless-runtime-entrypoint.md), [ADR-0008](../adr/0008-local-app-state-storage.md)
+**Related ADRs:** [ADR-0004](../adr/0004-swiftui-interactor-page-architecture.md), [ADR-0007](../adr/0007-headless-runtime-entrypoint.md), [ADR-0008](../adr/0008-local-app-state-storage.md), [ADR-0009](../adr/0009-persistent-chat-session-service.md)
 
 ## Purpose
 
 This plan records how to refactor chat execution so page interactors stay tied to the SwiftUI view lifecycle while chat IO and per-chat state live in a persistent service layer.
 
-The current `ChatPageInteractor` is doing too much: it starts runtime work, consumes streams, applies runtime events to the visible transcript, owns running/error state, and reloads session summaries. That was enough for the first chat UI, but it is the wrong ownership boundary for persistent multi-chat behavior.
+Before this refactor, `ChatPageInteractor` was doing too much: it started runtime work, consumed streams, applied runtime events to the visible transcript, owned running/error state, and reloaded session summaries. That was enough for the first chat UI, but it was the wrong ownership boundary for persistent multi-chat behavior.
 
 ## Required Architecture Decision
 
-Create an ADR before the implementation refactor.
+Completed in [ADR-0009: Persistent Chat Session Service And UI Subscription Boundary](../adr/0009-persistent-chat-session-service.md).
 
-Candidate title: `Persistent Chat Session Service And UI Subscription Boundary`
+The ADR decided:
 
-The ADR should decide:
-
-1. Whether the per-chat service is an actor, a main-actor observable object, or a split between a background actor and main-actor snapshot publisher.
-2. Whether the service consumes direct `streamUserMessage` streams, subscribes through `RuntimeEventHub.observeRunEvents`, or uses a hybrid model.
-3. Whether the service is keyed by persisted session ID, runtime run ID, or a dedicated chat instance ID.
-4. How dependency injection is scoped across app lifetime, page lifetime, and chat-session lifetime.
-5. How services are created, retained, and evicted.
-6. How page disappearance differs from explicit user cancellation.
-7. How persisted sessions are loaded back into service snapshots after restart or eviction.
+1. Per-chat services are `@MainActor` reference types for this slice.
+2. Services consume direct `streamUserMessage` streams and own event application.
+3. Services are keyed by persisted session ID, which is also the runtime run ID for persistent chats.
+4. `ChatSessionServiceRegistry` is app-lifetime and injected into route-built page interactors.
+5. Services are retained for the app lifetime; eviction is deferred.
+6. Page disappearance detaches subscriptions only; explicit cancel cancels the selected service's active send task.
+7. Missing services are rebuilt from persisted sessions through `LoadSessionUseCase`.
 
 ## Target Shape
 
@@ -234,14 +232,11 @@ This keeps the page in charge of user intent and selection, the registry in char
 
 ### Phase 1: ADR
 
-- Add the ADR named above.
-- Decide service isolation and event delivery model.
-- Define cancellation and eviction rules.
-- Update this plan if the ADR changes the target shape.
+- Completed in ADR-0009.
 
 ### Phase 2: Service Contracts
 
-Add contracts without moving the UI yet:
+Completed in `Features/ChatFeature/Sources/ChatFeature/ChatSessionService.swift`:
 
 - `StoreState<Data, Failure>`
 - `ChatSessionSnapshot`
@@ -260,7 +255,7 @@ The first snapshot should include:
 
 ### Phase 3: Runtime Event Ownership
 
-Move event application from `ChatPageInteractor` into `ChatSessionService`.
+Completed. Runtime event application now lives in `ChatSessionService`.
 
 Acceptance criteria:
 
@@ -271,7 +266,7 @@ Acceptance criteria:
 
 ### Phase 4: Interactor Slimming
 
-Refactor `ChatPageInteractor` into a page adapter:
+Completed. `ChatPageInteractor` is now a page adapter:
 
 - `onAppear` attaches to the selected service and loads summaries.
 - `onDisappear` detaches service subscriptions only.
@@ -283,9 +278,9 @@ Refactor `ChatPageInteractor` into a page adapter:
 
 ### Phase 5: Sidebar And Summary Updates
 
-Remove ad hoc sidebar refreshes from read-only flows.
+Partially completed. Read-only chat selection does not refresh or loading-flash the whole sidebar. The registry now owns summary loading state and publishes summary snapshots while the page is visible.
 
-Preferred direction:
+Remaining direction:
 
 - registry or storage layer publishes session summary changes,
 - sidebar subscribes to summaries through the interactor while visible,
@@ -293,7 +288,7 @@ Preferred direction:
 
 ### Phase 6: Tests
 
-Add tests at the service boundary first, then keep interactor tests narrow.
+Completed with focused service and interactor tests in `Tests/HephaestusRuntimeTests/ChatPageInteractorTests.swift`.
 
 Required tests:
 
@@ -308,6 +303,6 @@ Required tests:
 
 After implementation:
 
-- Update [Chat Log Runtime Architecture Map](./0005-chat-log-runtime-architecture-map.md) from current-state map to accepted service flow.
-- Update ADR-0004 only if the core interactor principle changes.
-- Add a reference doc if the service contracts become stable enough for future feature work.
+- [Chat Log Runtime Architecture Map](./0005-chat-log-runtime-architecture-map.md) was updated to reflect the service flow.
+- ADR-0004 did not need a core principle change; ADR-0009 specializes its durable-service boundary for chat.
+- A separate reference doc is deferred until the service contracts stabilize through the next chat/runtime feature.

@@ -61,6 +61,10 @@ struct ChatPageInteractorTests {
         ))
         await streamUserMessage.finish()
         await sendTask.value
+        await waitUntil {
+            !interactor.state.isRunning
+            && interactor.state.messages.last?.id == completedMessageID
+        }
 
         #expect(interactor.state.messages == [
             ChatMessageState(
@@ -114,6 +118,10 @@ struct ChatPageInteractorTests {
         ))
         await streamUserMessage.finish()
         await failedSend.value
+        await waitUntil {
+            !interactor.state.isRunning
+            && interactor.state.errorMessage == "provider unavailable"
+        }
 
         #expect(interactor.state.errorMessage == "provider unavailable")
         #expect(!interactor.state.isRunning)
@@ -138,6 +146,10 @@ struct ChatPageInteractorTests {
         ))
         await streamUserMessage.finish()
         await recoverySend.value
+        await waitUntil {
+            !interactor.state.isRunning
+            && Array(interactor.state.messages.map(\.text).suffix(2)) == ["second", "recovered"]
+        }
 
         #expect(interactor.state.errorMessage == nil)
         #expect(!interactor.state.isRunning)
@@ -197,6 +209,9 @@ struct ChatPageInteractorTests {
         ))
         await streamUserMessage.finish()
         await sendTask.value
+        await waitUntil {
+            !interactor.state.isRunning
+        }
 
         #expect(interactor.state.runID == targetID)
         #expect(interactor.state.messages.map(\.text) == ["target question"])
@@ -218,8 +233,16 @@ struct ChatPageInteractorTests {
 
         await interactor.handleAction(.changeDraft("first"))
         await interactor.handleAction(.tapSend)
+        await waitUntil {
+            !interactor.state.isRunning
+            && interactor.state.messages.last?.text == "done first"
+        }
         await interactor.handleAction(.changeDraft("second"))
         await interactor.handleAction(.tapSend)
+        await waitUntil {
+            !interactor.state.isRunning
+            && interactor.state.messages.last?.text == "done second"
+        }
 
         #expect(await createRun.calls() == 1)
         #expect(interactor.state.runID == runID)
@@ -258,6 +281,10 @@ struct ChatPageInteractorTests {
         ))
         await streamUserMessage.finish()
         await sendTask.value
+        await waitUntil {
+            !interactor.state.isRunning
+            && interactor.state.messages.last?.text == "done"
+        }
 
         #expect(!interactor.state.isRunning)
         #expect(interactor.state.messages.last?.text == "done")
@@ -294,6 +321,9 @@ struct ChatPageInteractorTests {
         ))
         await streamUserMessage.finish()
         await sendTask.value
+        await waitUntil {
+            !interactor.state.isRunning
+        }
 
         #expect(!interactor.state.isRunning)
     }
@@ -322,11 +352,11 @@ struct ChatPageInteractorTests {
 
         interactor.onAppear()
         await waitUntil {
-            interactor.state.sessions.count == 1
+            interactor.state.sessionSummaries.count == 1
         }
 
-        #expect(interactor.state.sessions.first?.id == sessionID)
-        #expect(interactor.state.sessions.first?.title == "Prior chat")
+        #expect(interactor.state.sessionSummaries.first?.id == sessionID)
+        #expect(interactor.state.sessionSummaries.first?.title == "Prior chat")
     }
 
     @Test
@@ -538,6 +568,142 @@ struct ChatPageInteractorTests {
 
         #expect(interactor.state.persistenceErrorMessage?.contains("boom") == true)
     }
+
+    @Test
+    @MainActor
+    func serviceContinuesResponseWithoutSnapshotSubscriber() async throws {
+        let runID = UUID()
+        let streamUserMessage = ControlledStreamUserMessageUseCase()
+        let service = ChatSessionService(
+            snapshot: ChatSessionSnapshot(id: runID, title: "Detached"),
+            streamUserMessage: streamUserMessage
+        )
+
+        service.send("detached question")
+
+        await streamUserMessage.waitUntilRequestCount(1)
+        await streamUserMessage.yield(.userMessageAccepted(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 1),
+            messageID: UUID(),
+            text: "detached question"
+        ))
+        await streamUserMessage.yield(.assistantMessageCompleted(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 2),
+            messageID: UUID(),
+            text: "detached answer"
+        ))
+        await streamUserMessage.finish()
+
+        await waitUntil {
+            !service.snapshot.isRunning
+            && service.snapshot.messages.map(\.text) == ["detached question", "detached answer"]
+        }
+    }
+
+    @Test
+    @MainActor
+    func pageDisappearDetachesWithoutCancellingSelectedService() async throws {
+        let runID = UUID()
+        let streamUserMessage = ControlledStreamUserMessageUseCase()
+        let registry = ChatSessionServiceRegistry(
+            createRun: RecordingCreateRunUseCase(runID: runID),
+            streamUserMessage: streamUserMessage
+        )
+        let interactor = makeInteractor(
+            runID: runID,
+            streamUserMessage: streamUserMessage,
+            sessionRegistry: registry
+        )
+
+        interactor.onAppear()
+        await interactor.handleAction(.changeDraft("keep running"))
+        await interactor.handleAction(.tapSend)
+        await streamUserMessage.waitUntilRequestCount(1)
+        #expect(interactor.state.isRunning)
+
+        interactor.onDisappear()
+        let service = try await registry.service(for: runID)
+
+        await streamUserMessage.yield(.userMessageAccepted(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 1),
+            messageID: UUID(),
+            text: "keep running"
+        ))
+        await streamUserMessage.yield(.assistantMessageCompleted(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 2),
+            messageID: UUID(),
+            text: "finished while hidden"
+        ))
+        await streamUserMessage.finish()
+
+        await waitUntil {
+            !service.snapshot.isRunning
+            && service.snapshot.messages.map(\.text) == ["keep running", "finished while hidden"]
+        }
+        #expect(interactor.state.isRunning)
+
+        interactor.onAppear()
+        await waitUntil {
+            !interactor.state.isRunning
+            && interactor.state.messages.map(\.text) == ["keep running", "finished while hidden"]
+        }
+    }
+
+    @Test
+    @MainActor
+    func explicitCancelStopsSelectedServiceActiveTurn() async throws {
+        let runID = UUID()
+        let streamUserMessage = ControlledStreamUserMessageUseCase()
+        let registry = ChatSessionServiceRegistry(
+            createRun: RecordingCreateRunUseCase(runID: runID),
+            streamUserMessage: streamUserMessage
+        )
+        let interactor = makeInteractor(
+            runID: runID,
+            streamUserMessage: streamUserMessage,
+            sessionRegistry: registry
+        )
+
+        await interactor.handleAction(.changeDraft("cancel me"))
+        await interactor.handleAction(.tapSend)
+        await streamUserMessage.waitUntilRequestCount(1)
+        #expect(interactor.state.isRunning)
+
+        await interactor.handleAction(.tapCancel)
+        let service = try await registry.service(for: runID)
+
+        await waitUntil {
+            !interactor.state.isRunning
+            && !service.snapshot.isRunning
+        }
+        await streamUserMessage.waitUntilTerminationCount(1)
+    }
+
+    @Test
+    @MainActor
+    func registryReloadsPersistedSessionSnapshotIntoService() async throws {
+        let sessionID = UUID()
+        let turnID = UUID()
+        let user = RunMessage(role: .user, parts: [.text("saved question")], source: .localUser, turnID: turnID)
+        let assistant = RunMessage(role: .assistant, parts: [.text("saved answer")], source: .provider, turnID: turnID)
+        let sessions = StubSessionUseCase(
+            sessions: [
+                PersistedSession(id: sessionID, title: "Saved", messages: [user, assistant])
+            ]
+        )
+        let registry = ChatSessionServiceRegistry(
+            createRun: RecordingCreateRunUseCase(runID: UUID()),
+            streamUserMessage: ImmediateStreamUserMessageUseCase(),
+            loadSession: sessions
+        )
+
+        let service = try await registry.service(for: sessionID)
+
+        #expect(service.snapshot.id == sessionID)
+        #expect(service.snapshot.title == "Saved")
+        #expect(service.snapshot.messages.map(\.text) == ["saved question", "saved answer"])
+        #expect(await sessions.loadedCount() == 1)
+    }
 }
 
 @MainActor
@@ -545,6 +711,7 @@ private func makeInteractor(
     runID: UUID?,
     createRun: CreateRunUseCase = RecordingCreateRunUseCase(runID: UUID()),
     streamUserMessage: StreamUserMessageUseCase,
+    sessionRegistry: ChatSessionServiceRegistry? = nil,
     loadProviderSettings: LoadProviderSettingsUseCase? = nil,
     saveProviderSettings: SaveProviderSettingsUseCase? = nil,
     clearProviderSettings: ClearProviderSettingsUseCase? = nil,
@@ -554,17 +721,20 @@ private func makeInteractor(
     createSession: CreateSessionUseCase? = nil,
     inspectRun: InspectRunUseCase? = nil
 ) -> ChatPageInteractor {
-    ChatPageInteractor(
-        input: ChatRouteInput(runID: runID),
+    let registry = sessionRegistry ?? ChatSessionServiceRegistry(
         createRun: createRun,
         streamUserMessage: streamUserMessage,
+        listSessions: listSessions,
+        loadSession: loadSession,
+        createSession: createSession
+    )
+    return ChatPageInteractor(
+        input: ChatRouteInput(runID: runID),
+        sessionRegistry: registry,
         loadProviderSettings: loadProviderSettings,
         saveProviderSettings: saveProviderSettings,
         clearProviderSettings: clearProviderSettings,
         validateProviderSettings: validateProviderSettings,
-        listSessions: listSessions,
-        loadSession: loadSession,
-        createSession: createSession,
         inspectRun: inspectRun,
         router: Router<AnyRouteInput, AnyModalInput>()
     )
@@ -658,6 +828,8 @@ private actor ControlledStreamUserMessageUseCase: StreamUserMessageUseCase {
     private var continuation: Continuation?
     private var requestWaiters: [CheckedContinuation<Void, Never>] = []
     private var streamWaiters: [CheckedContinuation<Void, Never>] = []
+    private var terminationCount = 0
+    private var terminationWaiters: [CheckedContinuation<Void, Never>] = []
 
     func streamUserMessage(
         runID: UUID,
@@ -667,6 +839,11 @@ private actor ControlledStreamUserMessageUseCase: StreamUserMessageUseCase {
         resumeRequestWaiters()
 
         return AsyncThrowingStream { continuation in
+            continuation.onTermination = { @Sendable _ in
+                Task {
+                    await self.recordTermination()
+                }
+            }
             Task {
                 self.setContinuation(continuation)
             }
@@ -696,6 +873,16 @@ private actor ControlledStreamUserMessageUseCase: StreamUserMessageUseCase {
         }
     }
 
+    func waitUntilTerminationCount(_ expectedCount: Int) async {
+        if terminationCount >= expectedCount {
+            return
+        }
+
+        await withCheckedContinuation { waiter in
+            terminationWaiters.append(waiter)
+        }
+    }
+
     func requests() -> [ChatInteractorStreamRequest] {
         recordedRequests
     }
@@ -712,6 +899,15 @@ private actor ControlledStreamUserMessageUseCase: StreamUserMessageUseCase {
     private func resumeRequestWaiters() {
         let waiters = requestWaiters
         requestWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    private func recordTermination() {
+        terminationCount += 1
+        let waiters = terminationWaiters
+        terminationWaiters.removeAll()
         for waiter in waiters {
             waiter.resume()
         }

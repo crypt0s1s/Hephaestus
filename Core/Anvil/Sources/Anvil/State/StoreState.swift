@@ -31,6 +31,17 @@ public extension StoreState {
         }
         return nil
     }
+
+    func mapError<NextFailure: Error>(_ transform: (Failure) -> NextFailure) -> StoreState<Data, NextFailure> {
+        switch self {
+        case .loading(let placeholder):
+            .loading(placeholder: placeholder)
+        case .loaded(let data):
+            .loaded(data)
+        case .error(let failure):
+            .error(transform(failure))
+        }
+    }
 }
 
 extension StoreState: Equatable where Data: Equatable, Failure: Equatable {}

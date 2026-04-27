@@ -5,8 +5,8 @@ import HephaestusKernel
 import HephaestusRuntime
 import SwiftUI
 
-public struct ChatMessageState: Equatable, Identifiable {
-    public enum Role: Equatable {
+public struct ChatMessageState: Equatable, Identifiable, Sendable {
+    public enum Role: Equatable, Sendable {
         case user
         case assistant
     }
@@ -24,20 +24,32 @@ public struct ChatMessageState: Equatable, Identifiable {
     }
 }
 
+public struct ChatPageError: Error, Equatable, Sendable, CustomStringConvertible {
+    public let description: String
+
+    public init(_ description: String) {
+        self.description = description
+    }
+
+    public init(_ error: Error) {
+        self.init(String(describing: error))
+    }
+}
+
 public struct ChatPageState: Equatable {
     public var runID: UUID?
+    public var selectedSnapshot: ChatSessionSnapshot?
     public var messages: [ChatMessageState]
     public var draftText: String
     public var isRunning: Bool
     public var errorMessage: String?
-    public var sessions: [ChatSessionSummaryState]
-    public var isLoadingSessions: Bool
-    public var persistenceErrorMessage: String?
+    public var sessions: StoreState<[ChatSessionSummaryState], ChatPageError>
     public var providerSettings: ProviderSettingsPanelState
     public var inspector: RunInspectorPanelState
 
     public init(
         runID: UUID? = nil,
+        selectedSnapshot: ChatSessionSnapshot? = nil,
         messages: [ChatMessageState] = [],
         draftText: String = "",
         isRunning: Bool = false,
@@ -49,15 +61,32 @@ public struct ChatPageState: Equatable {
         inspector: RunInspectorPanelState = RunInspectorPanelState()
     ) {
         self.runID = runID
+        self.selectedSnapshot = selectedSnapshot
         self.messages = messages
         self.draftText = draftText
         self.isRunning = isRunning
         self.errorMessage = errorMessage
-        self.sessions = sessions
-        self.isLoadingSessions = isLoadingSessions
-        self.persistenceErrorMessage = persistenceErrorMessage
+        if let persistenceErrorMessage {
+            self.sessions = .error(ChatPageError(persistenceErrorMessage))
+        } else if isLoadingSessions {
+            self.sessions = .loading(placeholder: sessions)
+        } else {
+            self.sessions = .loaded(sessions)
+        }
         self.providerSettings = providerSettings
         self.inspector = inspector
+    }
+
+    public var sessionSummaries: [ChatSessionSummaryState] {
+        sessions.data ?? []
+    }
+
+    public var isLoadingSessions: Bool {
+        sessions.isLoading
+    }
+
+    public var persistenceErrorMessage: String? {
+        sessions.failure?.description
     }
 }
 
@@ -66,6 +95,7 @@ public enum ChatPageAction: Equatable {
     case tapSend
     case tapNewChat
     case tapChat(UUID)
+    case tapCancel
     case tapSettings
     case dismissSettings
     case changeProviderBaseURL(String)
@@ -78,7 +108,7 @@ public enum ChatPageAction: Equatable {
     case dismissInspector
 }
 
-public struct ChatSessionSummaryState: Equatable, Identifiable {
+public struct ChatSessionSummaryState: Equatable, Identifiable, Sendable {
     public let id: UUID
     public var title: String
     public var updatedAt: Date
@@ -232,7 +262,7 @@ public struct ChatPage: View {
     public var body: some View {
         HStack(spacing: 0) {
             HistorySidebar(
-                sessions: state.sessions,
+                sessions: state.sessionSummaries,
                 selectedRunID: state.runID,
                 isLoading: state.isLoadingSessions,
                 errorMessage: state.persistenceErrorMessage,
@@ -247,6 +277,7 @@ public struct ChatPage: View {
                     isRunning: state.isRunning,
                     runID: state.runID,
                     canInspect: state.runID != nil,
+                    canCancel: state.isRunning,
                     handle: handle
                 )
 
@@ -422,7 +453,7 @@ private struct HistorySidebar: View {
                     .accessibilityIdentifier(ChatAccessibilityID.persistenceError)
             }
 
-            if isLoading {
+            if isLoading && sessions.isEmpty {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
@@ -450,6 +481,19 @@ private struct HistorySidebar: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 6) {
+                        if isLoading {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Refreshing")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                        }
+
                         ForEach(sessions) { session in
                             let isSelected = selectedRunID == session.id
                             Button {
@@ -507,6 +551,7 @@ private struct ChatHeader: View {
     let isRunning: Bool
     let runID: UUID?
     let canInspect: Bool
+    let canCancel: Bool
     let handle: (ChatPageAction) -> Void
 
     var body: some View {
@@ -541,6 +586,18 @@ private struct ChatHeader: View {
             .help("Inspect run")
             .accessibilityLabel("Inspect run")
             .accessibilityIdentifier(ChatAccessibilityID.inspectorButton)
+
+            Button {
+                handle(.tapCancel)
+            } label: {
+                Label("Cancel response", systemImage: "stop.circle")
+                    .labelStyle(.iconOnly)
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.borderless)
+            .disabled(!canCancel)
+            .help("Cancel response")
+            .accessibilityLabel("Cancel response")
 
             Button {
                 handle(.tapSettings)
@@ -1053,53 +1110,64 @@ private struct MessageBubble: View {
 
 @MainActor
 public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAction> {
-    private let createRun: CreateRunUseCase
-    private let streamUserMessage: StreamUserMessageUseCase
+    private let sessionRegistry: ChatSessionServiceRegistry
     private let loadProviderSettings: LoadProviderSettingsUseCase?
     private let saveProviderSettings: SaveProviderSettingsUseCase?
     private let clearProviderSettings: ClearProviderSettingsUseCase?
     private let validateProviderSettings: ValidateProviderSettingsUseCase?
-    private let listSessions: ListSessionsUseCase?
-    private let loadSession: LoadSessionUseCase?
-    private let createSession: CreateSessionUseCase?
     private let inspectRun: InspectRunUseCase?
     private let router: Router<AnyRouteInput, AnyModalInput>
     private var didLoadInitialState = false
+    private var selectedService: ChatSessionService?
+    private var selectedSnapshotTask: Task<Void, Never>?
+    private var summaryTask: Task<Void, Never>?
+    private var lifecycleTask: Task<Void, Never>?
 
     public init(
         input: ChatRouteInput,
-        createRun: CreateRunUseCase,
-        streamUserMessage: StreamUserMessageUseCase,
+        sessionRegistry: ChatSessionServiceRegistry,
         loadProviderSettings: LoadProviderSettingsUseCase? = nil,
         saveProviderSettings: SaveProviderSettingsUseCase? = nil,
         clearProviderSettings: ClearProviderSettingsUseCase? = nil,
         validateProviderSettings: ValidateProviderSettingsUseCase? = nil,
-        listSessions: ListSessionsUseCase? = nil,
-        loadSession: LoadSessionUseCase? = nil,
-        createSession: CreateSessionUseCase? = nil,
         inspectRun: InspectRunUseCase? = nil,
         router: Router<AnyRouteInput, AnyModalInput>
     ) {
-        self.createRun = createRun
-        self.streamUserMessage = streamUserMessage
+        self.sessionRegistry = sessionRegistry
         self.loadProviderSettings = loadProviderSettings
         self.saveProviderSettings = saveProviderSettings
         self.clearProviderSettings = clearProviderSettings
         self.validateProviderSettings = validateProviderSettings
-        self.listSessions = listSessions
-        self.loadSession = loadSession
-        self.createSession = createSession
         self.inspectRun = inspectRun
         self.router = router
         super.init(initialState: ChatPageState(runID: input.runID))
     }
 
     public override func onAppear() {
-        guard !didLoadInitialState else { return }
+        attachToSessionSummaries()
+        lifecycleTask?.cancel()
+        if didLoadInitialState {
+            if let runID = state.runID {
+                lifecycleTask = Task { [weak self] in
+                    await self?.attachToService(id: runID, force: true, resetDraft: false)
+                }
+            }
+            return
+        }
+
         didLoadInitialState = true
-        Task { [weak self] in
+        lifecycleTask = Task { [weak self] in
             await self?.loadInitialState()
         }
+    }
+
+    public override func onDisappear() {
+        lifecycleTask?.cancel()
+        lifecycleTask = nil
+        detachSelectedService()
+        summaryTask?.cancel()
+        summaryTask = nil
+        super.onDisappear()
     }
 
     public override func handleAction(_ action: ChatPageAction) async {
@@ -1112,6 +1180,8 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
             await handleTapNewChat()
         case .tapChat(let id):
             await handleTapChat(id)
+        case .tapCancel:
+            handleTapCancel()
         case .tapSettings:
             await handleTapSettings()
         case .dismissSettings:
@@ -1146,9 +1216,9 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
 
     private func loadInitialState() async {
         await loadProviderSettingsIntoState(present: false)
-        await refreshSessions()
+        await sessionRegistry.refreshSummaries()
         if let runID = state.runID {
-            await handleOpenSession(runID, force: true)
+            await attachToService(id: runID, force: true, resetDraft: false)
         }
     }
 
@@ -1169,147 +1239,102 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
             state.errorMessage = nil
         }
 
-        var submittedRunID: UUID?
+        let service: ChatSessionService
         do {
-            let runID = try await ensureRun()
-            submittedRunID = runID
-            let stream = try await streamUserMessage.streamUserMessage(runID: runID, text: text)
-            for try await event in stream {
-                apply(event, visibleRunID: runID)
-            }
-            await refreshSessions()
-        } catch is CancellationError {
-            setState { state in
-                if let submittedRunID, state.runID != submittedRunID { return }
-                state.isRunning = false
-                markStreamingAssistantComplete(in: &state)
+            if let selectedService {
+                service = selectedService
+            } else if let runID = state.runID {
+                service = try await sessionRegistry.service(for: runID)
+                attach(to: service, resetDraft: false)
+            } else {
+                service = try await createAndAttachService()
             }
         } catch {
-            setState { state in
-                if let submittedRunID, state.runID != submittedRunID { return }
-                state.errorMessage = String(describing: error)
-                state.isRunning = false
-                markStreamingAssistantComplete(in: &state)
-            }
+            setState { $0.isRunning = false }
+            setPersistenceError(error)
+            return
         }
-    }
 
-    private func ensureRun() async throws -> UUID {
-        if let runID = state.runID {
-            return runID
-        }
-        if let createSession {
-            let session = try await createSession.createSession(title: nil)
-            setState { state in
-                state.runID = session.id
-            }
-            await refreshSessions()
-            return session.id
-        }
-        let runID = await createRun.createRun()
-        setState { state in
-            state.runID = runID
-        }
-        return runID
-    }
-
-    private func apply(_ event: RuntimeEvent, visibleRunID: UUID) {
-        setState { state in
-            guard state.runID == visibleRunID, event.header.runID == visibleRunID else {
-                return
-            }
-            switch event {
-            case .runCreated(_, let runID):
-                state.runID = runID
-            case .userMessageAccepted(_, let messageID, let text):
-                state.messages.append(
-                    ChatMessageState(id: messageID, role: .user, text: text)
-                )
-            case .contextPrepared(_, _):
-                break
-            case .providerRequestPrepared(_, _, _, _):
-                break
-            case .assistantTextDelta(_, let text):
-                appendAssistantDelta(text, to: &state)
-            case .assistantMessageCompleted(_, let messageID, let text):
-                completeAssistantMessage(messageID: messageID, text: text, in: &state)
-                state.isRunning = false
-            case .turnCancelled(_):
-                state.isRunning = false
-                markStreamingAssistantComplete(in: &state)
-            case .turnFailed(_, let reason):
-                state.errorMessage = reason
-                state.isRunning = false
-                markStreamingAssistantComplete(in: &state)
-            }
-        }
-    }
-
-    private func appendAssistantDelta(_ text: String, to state: inout ChatPageState) {
-        if let index = state.messages.lastIndex(where: { $0.role == .assistant && $0.isStreaming }) {
-            state.messages[index].text += text
-        } else {
-            state.messages.append(
-                ChatMessageState(role: .assistant, text: text, isStreaming: true)
-            )
-        }
-    }
-
-    private func completeAssistantMessage(messageID: UUID, text: String, in state: inout ChatPageState) {
-        if let index = state.messages.lastIndex(where: { $0.role == .assistant && $0.isStreaming }) {
-            state.messages[index].id = messageID
-            state.messages[index].text = text
-            state.messages[index].isStreaming = false
-        } else {
-            state.messages.append(
-                ChatMessageState(id: messageID, role: .assistant, text: text)
-            )
-        }
-    }
-
-    private func markStreamingAssistantComplete(in state: inout ChatPageState) {
-        if let index = state.messages.lastIndex(where: { $0.role == .assistant && $0.isStreaming }) {
-            state.messages[index].isStreaming = false
-        }
+        service.send(text)
     }
 
     private func handleTapNewChat() async {
         do {
-            let session = try await createSession?.createSession(title: nil)
-            setState { state in
-                state.runID = session?.id
-                state.messages = []
-                state.draftText = ""
-                state.errorMessage = nil
-                state.persistenceErrorMessage = nil
-                state.inspector = RunInspectorPanelState()
-            }
-            await refreshSessions()
+            let service = try await sessionRegistry.createService(title: nil)
+            attach(to: service, resetDraft: true)
         } catch {
             setPersistenceError(error)
         }
     }
 
     private func handleTapChat(_ id: UUID) async {
-        await handleOpenSession(id)
+        await attachToService(id: id, resetDraft: true)
     }
 
-    private func handleOpenSession(_ id: UUID, force: Bool = false) async {
+    private func handleTapCancel() {
+        selectedService?.cancelActiveTurn()
+    }
+
+    private func attachToService(id: UUID, force: Bool = false, resetDraft: Bool) async {
         guard force || state.runID != id else { return }
-        guard let loadSession else { return }
         do {
-            let session = try await loadSession.loadSession(id: id)
-            setState { state in
-                state.runID = session.id
-                state.messages = session.messages.compactMap(ChatMessageState.init(message:))
-                state.draftText = ""
-                state.isRunning = false
-                state.errorMessage = nil
-                state.persistenceErrorMessage = nil
-                state.inspector = RunInspectorPanelState()
-            }
+            let service = try await sessionRegistry.service(for: id)
+            attach(to: service, resetDraft: resetDraft)
         } catch {
             setPersistenceError(error)
+        }
+    }
+
+    private func createAndAttachService() async throws -> ChatSessionService {
+        let service = try await sessionRegistry.createService(title: nil)
+        attach(to: service, resetDraft: false)
+        return service
+    }
+
+    private func attach(to service: ChatSessionService, resetDraft: Bool) {
+        detachSelectedService()
+        selectedService = service
+        selectedSnapshotTask = Task { [weak self, service] in
+            for await snapshot in service.subscribeSnapshots() {
+                self?.apply(snapshot)
+            }
+        }
+        setState { state in
+            state.runID = service.id
+            if resetDraft {
+                state.draftText = ""
+            }
+            state.inspector = RunInspectorPanelState()
+        }
+        apply(service.snapshot)
+    }
+
+    private func detachSelectedService() {
+        selectedSnapshotTask?.cancel()
+        selectedSnapshotTask = nil
+        selectedService = nil
+    }
+
+    private func attachToSessionSummaries() {
+        summaryTask?.cancel()
+        summaryTask = Task { [weak self] in
+            guard let self else { return }
+            for await summaries in sessionRegistry.subscribeSummaries() {
+                setState {
+                    $0.sessions = summaries.mapError(ChatPageError.init)
+                }
+            }
+        }
+    }
+
+    private func apply(_ snapshot: ChatSessionSnapshot) {
+        setState { state in
+            guard state.runID == nil || state.runID == snapshot.id else { return }
+            state.runID = snapshot.id
+            state.selectedSnapshot = snapshot
+            state.messages = snapshot.messages
+            state.isRunning = snapshot.isRunning
+            state.errorMessage = snapshot.errorMessage
         }
     }
 
@@ -1429,26 +1454,8 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
         }
     }
 
-    private func refreshSessions() async {
-        guard let listSessions else { return }
-        setState { $0.isLoadingSessions = true }
-        do {
-            let summaries = try await listSessions.listSessions()
-            setState { state in
-                state.sessions = summaries.map(ChatSessionSummaryState.init(summary:))
-                state.persistenceErrorMessage = nil
-                state.isLoadingSessions = false
-            }
-        } catch {
-            setState {
-                $0.persistenceErrorMessage = String(describing: error)
-                $0.isLoadingSessions = false
-            }
-        }
-    }
-
     private func setPersistenceError(_ error: Error) {
-        setState { $0.persistenceErrorMessage = String(describing: error) }
+        setState { $0.sessions = .error(ChatPageError(error)) }
     }
 
     private func currentProviderDraft() -> ProviderSettingsDraft {
@@ -1484,29 +1491,21 @@ public enum ChatRoutes {
             },
             build: { anyInput, context in
                 let input = try anyInput.decode(ChatRouteInput.self)
-                let createRun = try context.dependency(CreateRunUseCase.self)
-                let streamUserMessage = try context.dependency(StreamUserMessageUseCase.self)
                 let loadProviderSettings = try? context.dependency(LoadProviderSettingsUseCase.self)
                 let saveProviderSettings = try? context.dependency(SaveProviderSettingsUseCase.self)
                 let clearProviderSettings = try? context.dependency(ClearProviderSettingsUseCase.self)
                 let validateProviderSettings = try? context.dependency(ValidateProviderSettingsUseCase.self)
-                let listSessions = try? context.dependency(ListSessionsUseCase.self)
-                let loadSession = try? context.dependency(LoadSessionUseCase.self)
-                let createSession = try? context.dependency(CreateSessionUseCase.self)
                 let inspectRun = try? context.dependency(InspectRunUseCase.self)
+                let sessionRegistry = try context.dependency(ChatSessionServiceRegistry.self)
                 return AnyView(
                     Page(
                         interactor: ChatPageInteractor(
                             input: input,
-                            createRun: createRun,
-                            streamUserMessage: streamUserMessage,
+                            sessionRegistry: sessionRegistry,
                             loadProviderSettings: loadProviderSettings,
                             saveProviderSettings: saveProviderSettings,
                             clearProviderSettings: clearProviderSettings,
                             validateProviderSettings: validateProviderSettings,
-                            listSessions: listSessions,
-                            loadSession: loadSession,
-                            createSession: createSession,
                             inspectRun: inspectRun,
                             router: context.router
                         ),
@@ -1532,14 +1531,12 @@ public enum ChatRoutes {
                 let saveProviderSettings = try? context.dependency(SaveProviderSettingsUseCase.self)
                 let clearProviderSettings = try? context.dependency(ClearProviderSettingsUseCase.self)
                 let validateProviderSettings = try? context.dependency(ValidateProviderSettingsUseCase.self)
-                let createRun = try context.dependency(CreateRunUseCase.self)
-                let streamUserMessage = try context.dependency(StreamUserMessageUseCase.self)
+                let sessionRegistry = try context.dependency(ChatSessionServiceRegistry.self)
                 return AnyView(
                     Page(
                         interactor: ChatPageInteractor(
                             input: ChatRouteInput(runID: nil),
-                            createRun: createRun,
-                            streamUserMessage: streamUserMessage,
+                            sessionRegistry: sessionRegistry,
                             loadProviderSettings: loadProviderSettings,
                             saveProviderSettings: saveProviderSettings,
                             clearProviderSettings: clearProviderSettings,

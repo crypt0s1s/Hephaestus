@@ -200,12 +200,17 @@ public struct PersistentStreamUserMessageUseCase: StreamUserMessageUseCase {
         let runEvents = await run.streamUserMessage(text)
 
         return AsyncThrowingStream { continuation in
+            let cancellationState = PersistentStreamCancellationState()
             let task = Task {
                 do {
                     for try await event in runEvents {
+                        await cancellationState.record(event.header)
                         let runtimeEvent = RuntimeEvent(event)
                         try await persist(event, runtimeEvent: runtimeEvent, sessionID: runID)
                         await eventHub.publish(runtimeEvent, runID: runID)
+                        if event.isTerminal {
+                            await cancellationState.recordTerminalEvent()
+                        }
                         continuation.yield(runtimeEvent)
                     }
                     continuation.finish()
@@ -213,8 +218,15 @@ public struct PersistentStreamUserMessageUseCase: StreamUserMessageUseCase {
                     continuation.finish(throwing: error)
                 }
             }
-            continuation.onTermination = { @Sendable _ in
+            continuation.onTermination = { @Sendable termination in
+                guard case .cancelled = termination else { return }
                 task.cancel()
+                Task {
+                    guard let event = await cancellationState.makeCancellationEvent() else { return }
+                    let runtimeEvent = RuntimeEvent(event)
+                    try? await persist(event, runtimeEvent: runtimeEvent, sessionID: runID)
+                    await eventHub.publish(runtimeEvent, runID: runID)
+                }
             }
         }
     }
@@ -241,6 +253,46 @@ public struct PersistentStreamUserMessageUseCase: StreamUserMessageUseCase {
         session.apply(event, runtimeEvent: runtimeEvent)
         state.sessions[index] = session
         try await store.save(state)
+    }
+}
+
+private actor PersistentStreamCancellationState {
+    private var lastHeader: EventHeader?
+    private var didRecordTerminalEvent = false
+
+    func record(_ header: EventHeader) {
+        lastHeader = header
+    }
+
+    func recordTerminalEvent() {
+        didRecordTerminalEvent = true
+    }
+
+    func makeCancellationEvent() -> RunEvent? {
+        guard !didRecordTerminalEvent,
+              let lastHeader,
+              let turnID = lastHeader.turnID
+        else {
+            return nil
+        }
+
+        didRecordTerminalEvent = true
+        return .turnCancelled(EventHeader(
+            runID: lastHeader.runID,
+            turnID: turnID,
+            sequence: lastHeader.sequence + 1
+        ))
+    }
+}
+
+private extension RunEvent {
+    var isTerminal: Bool {
+        switch self {
+        case .assistantMessageCompleted, .turnCancelled, .turnFailed:
+            true
+        case .userMessageAccepted, .contextPrepared, .providerRequestPrepared, .providerChunkReceived:
+            false
+        }
     }
 }
 
