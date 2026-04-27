@@ -48,6 +48,56 @@ flowchart TD
 
 The registry is a factory/cache, not a command facade. The interactor asks the registry for the currently selected chat service, then sends chat commands to that service. This keeps command ownership on the per-chat object and avoids splitting behavior between the registry and the service.
 
+## Next Refinement: Chat Workspace Service
+
+The implemented shape still exposes `ChatSessionServiceRegistry` to `ChatPageInteractor`. That was a useful step for moving stream ownership out of the page interactor, but it is not the preferred long-term boundary.
+
+The next refinement should introduce `ChatWorkspaceService` as the chat feature-lifecycle service. Avoid the generic name `ChatCoordinator`; it does not say what the object owns. `ChatWorkspaceService` should own the chat workspace state and hide session-service lookup from page interactors.
+
+Target shape:
+
+```mermaid
+flowchart TD
+    Shell["App Shell / Route Host"]
+    Router["Router\nnavigation state"]
+    Page["ChatPage"]
+    Interactor["ChatPageInteractor\npage lifecycle"]
+    Workspace["ChatWorkspaceService\nchat feature lifecycle"]
+    Registry["ChatSessionServiceRegistry\nservice cache/factory"]
+    Service["ChatSessionService\nper-chat lifecycle"]
+
+    Shell --> Router
+    Router --> Shell
+    Shell --> Page
+    Page --> Interactor
+    Interactor -->|"tapChat, tapSend, tapNewChat, tapCancel"| Workspace
+    Workspace -->|"service(for: chatID)"| Registry
+    Registry -->|"create/reuse"| Service
+    Workspace -->|"send/cancel/attach selected chat"| Service
+    Service -->|"snapshots"| Workspace
+    Workspace -->|"workspace snapshot"| Interactor
+    Workspace -->|"route sync intent"| Router
+```
+
+Ownership rules:
+
+- The app shell and route host render SwiftUI pages from router state.
+- The router owns navigation state and route stack changes.
+- `ChatWorkspaceService` owns chat feature state: selected chat, session summaries, selected service attachment, new-chat creation, and route-sync intent.
+- `ChatWorkspaceService` may call the router to express navigation intent, such as selecting `/chat/:id`, but it must not instantiate SwiftUI views or call page methods.
+- `ChatPageInteractor` should not know about `ChatSessionServiceRegistry`. It should call `ChatWorkspaceService` with user intents and subscribe to a workspace/page projection.
+- Interactors should not call other interactors. If a future `ChatPanelInteractor` exists for a larger chat surface, it should coordinate through `ChatWorkspaceService`, not by calling `ChatPageInteractor`.
+
+This gives three distinct lifetimes:
+
+| Object | Lifetime | Responsibility |
+| --- | --- | --- |
+| `ChatPageInteractor` | Page/view lifecycle | Page-local state, draft text, inspector/settings presentation, and forwarding user intents. |
+| `ChatWorkspaceService` | Chat feature lifecycle | Selected chat, workspace snapshot, route sync, summary observation, and access to selected `ChatSessionService`. |
+| `ChatSessionService` | Per-chat lifecycle | Runtime IO, transcript projection, active turn state, cancellation, and per-chat errors. |
+
+When this refinement is implemented, update ADR-0009 or add a superseding ADR because it changes the public dependency boundary: page interactors should depend on `ChatWorkspaceService`, not directly on `ChatSessionServiceRegistry`.
+
 ## Dependency Injection Scopes
 
 The refactor should keep dependency injection explicit and scoped by lifetime. A single app-wide container is not enough once chat work can outlive a page.
