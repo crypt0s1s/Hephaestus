@@ -100,7 +100,7 @@ This gives three distinct lifetimes:
 | `ChatSessionServiceRegistry` | Workspace-private sub-object | Creates/reuses `ChatSessionService` instances and keeps the session-service cache. |
 | `ChatSessionService` | Per-chat lifecycle | Runtime IO, transcript projection, active turn state, cancellation, and per-chat errors. |
 
-When this refinement is implemented, update ADR-0009 or add a superseding ADR because it changes the public dependency boundary: page interactors should depend on `ChatWorkspaceService`, not directly on `ChatSessionServiceRegistry`.
+When this refinement is implemented, update ADR-0009 or add a superseding ADR because it changes the public dependency boundary. For this slice, the `ChatWorkspaceService` refinement supersedes ADR-0009's interactor-to-registry boundary: page interactors should depend on `ChatWorkspaceService`, not directly on `ChatSessionServiceRegistry`.
 
 ## Dependency Injection Scopes
 
@@ -152,15 +152,13 @@ This keeps UI state explicit and avoids scattered combinations of `isLoading`, o
 
 ### Page Interactor State
 
-`ChatPageInteractor` should own only state required to render the current page and route view actions. It can cache the latest snapshot from the selected `ChatSessionService`, but that snapshot is not the authoritative chat log.
+`ChatPageInteractor` should own only state required to render the current page and route view actions. It can cache the latest page projection from `ChatWorkspaceService`, but that projection is not the authoritative chat workspace or chat log.
 
 Illustrative shape:
 
 ```swift
 struct ChatPageState: Equatable {
-    var selectedChatID: UUID?
-    var selectedSnapshot: ChatSessionSnapshot?
-    var sessions: StoreState<[ChatSessionSummaryState], ChatPageError>
+    var workspaceSnapshot: ChatWorkspaceSnapshot?
     var draftText: String
     var providerSettings: ProviderSettingsPanelState
     var inspector: StoreState<PersistedRunInspection?, ChatPageError>
@@ -169,22 +167,54 @@ struct ChatPageState: Equatable {
 
 Interactor-owned state should include:
 
-- selected chat ID,
 - local draft text for the visible composer,
-- latest selected chat snapshot for rendering,
-- sidebar summaries as `StoreState<[ChatSessionSummaryState], ChatPageError>` while the page is visible,
+- latest workspace/page projection for rendering,
 - page-local loading/error state represented with `StoreState` rather than separate loading booleans and error optionals,
 - page-local modal and inspector presentation state, and
-- subscription handles for the selected service and summary stream.
+- subscription handles for the workspace projection stream.
 
 Interactor-owned state should not include:
 
 - authoritative transcript storage,
+- selected chat authority,
+- selected service attachment,
+- sidebar summary authority,
 - active provider/runtime tasks,
 - per-chat running state for chats that are not selected,
 - session-scoped context/tool/provider policy,
 - retry/backoff state, or
 - persistence reconciliation state.
+
+### Chat Workspace Service State
+
+`ChatWorkspaceService` owns the chat feature surface. It is the object page interactors should depend on for chat actions and renderable chat workspace state.
+
+Illustrative shape:
+
+```swift
+struct ChatWorkspaceSnapshot: Equatable, Sendable {
+    var selectedChatID: UUID?
+    var selectedChat: ChatSessionSnapshot?
+    var sessions: StoreState<[ChatSessionSummaryState], ChatWorkspaceError>
+}
+```
+
+Workspace-owned state should include:
+
+- selected chat ID,
+- selected `ChatSessionService` attachment,
+- selected service snapshot subscription,
+- sidebar/session summaries,
+- workspace-level loading/error state for summaries and chat selection,
+- route-sync intent for selected chat changes, and
+- a workspace snapshot publisher for page interactors.
+
+Workspace-owned state should not include:
+
+- provider/runtime stream application,
+- transcript mutation for a specific chat,
+- SwiftUI page presentation state such as settings sheet visibility or inspector sheet visibility, or
+- direct SwiftUI view construction.
 
 ### Chat Session Service State
 
@@ -221,7 +251,7 @@ The service may rebuild its snapshot from persisted session data when created. I
 
 ### Chat Session Service Registry State
 
-`ChatSessionServiceRegistry` owns the service index/cache. In the implemented slice it is app-lifetime and route-injected. In the next refinement it should be workspace-private: `ChatWorkspaceService` owns it, or is constructed with it, and page interactors never depend on it directly.
+`ChatSessionServiceRegistry` owns only the service index/cache. In the implemented slice it is app-lifetime and route-injected. In the next refinement it should be workspace-private: `ChatWorkspaceService` owns it, or is constructed with it, and page interactors never depend on it directly.
 
 It should create and reuse services, but it should not become the command handler for individual chat actions.
 
@@ -230,21 +260,21 @@ Illustrative shape:
 ```swift
 actor ChatSessionServiceRegistry {
     private var services: [UUID: ChatSessionService]
-    private var summaries: StoreState<[ChatSessionSummaryState], ChatRegistryError>
 }
 ```
 
 Registry-owned state should include:
 
 - cached `ChatSessionService` instances keyed by session/run ID,
-- summary/index data needed to list chats and locate services,
 - service creation dependencies and factories,
-- eviction metadata such as last access time or active subscriber count,
-- app-level summary publisher, if sidebar summaries become push-based, and
-- creation flow for a new session service.
+- eviction metadata such as last access time or active subscriber count, and
+- creation flow for a new session service when asked by `ChatWorkspaceService`.
 
 Registry-owned state should not include:
 
+- selected chat state,
+- sidebar summary ownership,
+- workspace snapshot publication,
 - transcript mutation logic,
 - provider/runtime stream application,
 - per-chat cancellation behavior, or
@@ -255,43 +285,50 @@ Registry-owned state should not include:
 ```mermaid
 sequenceDiagram
     participant Page as ChatPageInteractor
+    participant Workspace as ChatWorkspaceService
     participant Registry as ChatSessionServiceRegistry
     participant Service as ChatSessionService
     participant Runtime as PersistentAppRuntime
 
-    Page->>Registry: service(for: selectedChatID)
+    Page->>Workspace: tapChat(chatID)
+    Workspace->>Registry: service(for: chatID)
     alt service cached
-        Registry-->>Page: existing service
+        Registry-->>Workspace: existing service
     else service missing
         Registry->>Runtime: load persisted session or create run
         Registry->>Service: init(runtime dependencies, session snapshot)
-        Registry-->>Page: new service
+        Registry-->>Workspace: new service
     end
-    Page->>Service: subscribeSnapshots()
-    Service-->>Page: current snapshot
+    Workspace->>Service: subscribeSnapshots()
+    Service-->>Workspace: current snapshot
+    Workspace-->>Page: workspace snapshot
 ```
 
 New chat creation should follow the same ownership:
 
 1. The interactor handles `.tapNewChat`.
-2. The interactor asks the registry to create or return a service for the new chat.
-3. The registry coordinates the persisted session/run creation through runtime-facing use cases.
-4. The registry constructs the chat-session-scoped service.
-5. The interactor selects and subscribes to that service.
+2. The interactor asks `ChatWorkspaceService` to create and select a new chat.
+3. `ChatWorkspaceService` asks its private registry to create or return a service for the new chat.
+4. The registry coordinates the persisted session/run creation through runtime-facing use cases.
+5. The registry constructs the chat-session-scoped service.
+6. `ChatWorkspaceService` selects and subscribes to that service.
+7. The interactor renders the resulting workspace snapshot.
 
-This keeps the page in charge of user intent and selection, the registry in charge of service lifetime, and the service in charge of per-chat behavior.
+This keeps the page in charge of local UI intent, the workspace service in charge of chat feature state, the registry in charge of service lifetime/cache mechanics, and the service in charge of per-chat behavior.
 
 ## Responsibility Changes
 
 | Area | Current Owner | Target Owner |
 | --- | --- | --- |
 | Selected page rendering state | `ChatPageInteractor` | `ChatPageInteractor` |
-| Send command routing | `ChatPageInteractor` | `ChatPageInteractor` forwards to `ChatSessionService` |
+| Selected chat state | `ChatPageInteractor` + registry lookup | `ChatWorkspaceService` |
+| Sidebar summaries | `ChatSessionServiceRegistry` | `ChatWorkspaceService` |
+| Send command routing | `ChatPageInteractor` | `ChatPageInteractor` forwards to `ChatWorkspaceService`, which forwards to selected `ChatSessionService` |
 | Active provider/runtime IO | `ChatPageInteractor` task | `ChatSessionService` task |
 | Runtime event application | `ChatPageInteractor.apply` | `ChatSessionService` |
 | Per-chat running/error state | Global selected page state | `ChatSessionSnapshot` |
 | Transcript cache | Selected page state | `ChatSessionService` |
-| Session summary refresh | Explicit interactor calls | Registry/store publisher or service-driven summary invalidation |
+| Session summary refresh | Explicit interactor calls | Workspace-owned summary refresh or service-driven summary invalidation |
 | Page disappear behavior | Cancels page tasks | Detaches subscription; chat continues unless explicitly cancelled |
 
 ## Refactor Sequence
