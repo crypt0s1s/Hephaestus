@@ -37,6 +37,7 @@ public struct ChatPageError: Error, Equatable, Sendable, CustomStringConvertible
 }
 
 public struct ChatPageState: Equatable {
+    public var workspaceSnapshot: ChatWorkspaceSnapshot?
     public var runID: UUID?
     public var selectedSnapshot: ChatSessionSnapshot?
     public var messages: [ChatMessageState]
@@ -48,6 +49,7 @@ public struct ChatPageState: Equatable {
     public var inspector: RunInspectorPanelState
 
     public init(
+        workspaceSnapshot: ChatWorkspaceSnapshot? = nil,
         runID: UUID? = nil,
         selectedSnapshot: ChatSessionSnapshot? = nil,
         messages: [ChatMessageState] = [],
@@ -60,6 +62,7 @@ public struct ChatPageState: Equatable {
         providerSettings: ProviderSettingsPanelState = ProviderSettingsPanelState(),
         inspector: RunInspectorPanelState = RunInspectorPanelState()
     ) {
+        self.workspaceSnapshot = workspaceSnapshot
         self.runID = runID
         self.selectedSnapshot = selectedSnapshot
         self.messages = messages
@@ -1131,48 +1134,45 @@ private struct MessageBubble: View {
 
 @MainActor
 public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAction> {
-    private let sessionRegistry: ChatSessionServiceRegistry
+    private let workspace: ChatWorkspaceService
+    private let initialRunID: UUID?
     private let loadProviderSettings: LoadProviderSettingsUseCase?
     private let saveProviderSettings: SaveProviderSettingsUseCase?
     private let clearProviderSettings: ClearProviderSettingsUseCase?
     private let validateProviderSettings: ValidateProviderSettingsUseCase?
     private let inspectRun: InspectRunUseCase?
-    private let router: Router<AnyRouteInput, AnyModalInput>
+    private let subscribeToWorkspace: Bool
     private var didLoadInitialState = false
-    private var selectedService: ChatSessionService?
-    private var selectedSnapshotTaskID: UUID?
-    private var summaryTaskID: UUID?
+    private var workspaceTaskID: UUID?
     private var lifecycleTaskID: UUID?
 
     public init(
         input: ChatRouteInput,
-        sessionRegistry: ChatSessionServiceRegistry,
+        workspace: ChatWorkspaceService,
         loadProviderSettings: LoadProviderSettingsUseCase? = nil,
         saveProviderSettings: SaveProviderSettingsUseCase? = nil,
         clearProviderSettings: ClearProviderSettingsUseCase? = nil,
         validateProviderSettings: ValidateProviderSettingsUseCase? = nil,
         inspectRun: InspectRunUseCase? = nil,
-        router: Router<AnyRouteInput, AnyModalInput>
+        subscribeToWorkspace: Bool = true
     ) {
-        self.sessionRegistry = sessionRegistry
+        self.workspace = workspace
+        self.initialRunID = input.runID
         self.loadProviderSettings = loadProviderSettings
         self.saveProviderSettings = saveProviderSettings
         self.clearProviderSettings = clearProviderSettings
         self.validateProviderSettings = validateProviderSettings
         self.inspectRun = inspectRun
-        self.router = router
+        self.subscribeToWorkspace = subscribeToWorkspace
         super.init(initialState: ChatPageState(runID: input.runID))
     }
 
     public override func onAppear() {
-        attachToSessionSummaries()
         cancelPageTask(lifecycleTaskID)
         lifecycleTaskID = nil
         if didLoadInitialState {
-            if let runID = state.runID {
-                lifecycleTaskID = runPageTask { [weak self] in
-                    await self?.attachToService(id: runID, force: true, resetDraft: false)
-                }
+            if subscribeToWorkspace, workspaceTaskID == nil {
+                attachToWorkspace()
             }
             return
         }
@@ -1186,9 +1186,7 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
     public override func onDisappear() {
         cancelPageTask(lifecycleTaskID)
         lifecycleTaskID = nil
-        detachSelectedService()
-        cancelPageTask(summaryTaskID)
-        summaryTaskID = nil
+        detachWorkspace()
         super.onDisappear()
     }
 
@@ -1238,9 +1236,13 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
 
     private func loadInitialState() async {
         await loadProviderSettingsIntoState(present: false)
-        await sessionRegistry.refreshSummaries()
-        if let runID = state.runID {
-            await attachToService(id: runID, force: true, resetDraft: false)
+        guard subscribeToWorkspace else { return }
+        await workspace.refreshSummaries()
+        if let initialRunID {
+            await workspace.selectChat(initialRunID, force: true)
+        }
+        if workspaceTaskID == nil {
+            attachToWorkspace()
         }
     }
 
@@ -1255,108 +1257,92 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
         let text = state.draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
+        if let runID = state.runID, workspace.snapshot.selectedChatID != runID {
+            let selected = await workspace.selectChat(runID, force: true)
+            apply(workspace.snapshot)
+            guard selected else {
+                return
+            }
+        }
+
         setState { state in
             state.draftText = ""
             state.isRunning = true
             state.errorMessage = nil
         }
 
-        let service: ChatSessionService
-        do {
-            if let selectedService {
-                service = selectedService
-            } else if let runID = state.runID {
-                service = try await sessionRegistry.service(for: runID)
-                attach(to: service, resetDraft: false)
-            } else {
-                service = try await createAndAttachService()
-            }
-        } catch {
+        let accepted = await workspace.sendMessage(text)
+        apply(workspace.snapshot)
+        if !accepted {
             setState { $0.isRunning = false }
-            setPersistenceError(error)
-            return
         }
-
-        service.send(text)
     }
 
     private func handleTapNewChat() async {
-        do {
-            let service = try await sessionRegistry.createService(title: nil)
-            attach(to: service, resetDraft: true)
-        } catch {
-            setPersistenceError(error)
+        let changed = await workspace.createNewChat(title: nil)
+        apply(workspace.snapshot)
+        if changed {
+            setState {
+                $0.draftText = ""
+                $0.inspector = RunInspectorPanelState()
+            }
         }
     }
 
     private func handleTapChat(_ id: UUID) async {
-        await attachToService(id: id, resetDraft: true)
+        guard state.runID != id else { return }
+        let changed = await workspace.selectChat(id)
+        apply(workspace.snapshot)
+        if changed {
+            setState {
+                $0.draftText = ""
+                $0.inspector = RunInspectorPanelState()
+            }
+        }
     }
 
     private func handleTapCancel() {
-        selectedService?.cancelActiveTurn()
+        workspace.cancelSelectedTurn()
+        apply(workspace.snapshot)
     }
 
-    private func attachToService(id: UUID, force: Bool = false, resetDraft: Bool) async {
-        guard force || state.runID != id else { return }
-        do {
-            let service = try await sessionRegistry.service(for: id)
-            attach(to: service, resetDraft: resetDraft)
-        } catch {
-            setPersistenceError(error)
-        }
-    }
-
-    private func createAndAttachService() async throws -> ChatSessionService {
-        let service = try await sessionRegistry.createService(title: nil)
-        attach(to: service, resetDraft: false)
-        return service
-    }
-
-    private func attach(to service: ChatSessionService, resetDraft: Bool) {
-        detachSelectedService()
-        selectedService = service
-        selectedSnapshotTaskID = runPageTask { [weak self, service] in
-            for await snapshot in service.subscribeSnapshots() {
-                self?.apply(snapshot)
-            }
-        }
-        setState { state in
-            state.runID = service.id
-            if resetDraft {
-                state.draftText = ""
-            }
-            state.inspector = RunInspectorPanelState()
-        }
-        apply(service.snapshot)
-    }
-
-    private func detachSelectedService() {
-        cancelPageTask(selectedSnapshotTaskID)
-        selectedSnapshotTaskID = nil
-        selectedService = nil
-    }
-
-    private func attachToSessionSummaries() {
-        cancelPageTask(summaryTaskID)
-        summaryTaskID = runPageTask { [weak self] in
+    private func attachToWorkspace() {
+        cancelPageTask(workspaceTaskID)
+        workspaceTaskID = runPageTask { [weak self] in
             guard let self else { return }
-            for await summaries in sessionRegistry.subscribeSummaries() {
-                setState {
-                    $0.sessions = summaries.mapError(ChatPageError.init)
-                }
+            for await snapshot in workspace.subscribeSnapshots() {
+                apply(snapshot)
             }
         }
     }
 
-    private func apply(_ snapshot: ChatSessionSnapshot) {
+    private func detachWorkspace() {
+        cancelPageTask(workspaceTaskID)
+        workspaceTaskID = nil
+    }
+
+    private func apply(_ snapshot: ChatWorkspaceSnapshot) {
         setState { state in
-            guard state.runID == nil || state.runID == snapshot.id else { return }
-            state.runID = snapshot.id
-            state.selectedSnapshot = snapshot
-            state.messages = snapshot.messages
-            state.isRunning = snapshot.isRunning
-            state.errorMessage = snapshot.errorMessage
+            if let currentSnapshot = state.workspaceSnapshot,
+               snapshot.revision < currentSnapshot.revision {
+                return
+            }
+            state.workspaceSnapshot = snapshot
+            if let selectedChatID = snapshot.selectedChatID {
+                state.runID = selectedChatID
+                state.selectedSnapshot = snapshot.selectedChat
+                state.messages = snapshot.selectedChat?.messages ?? []
+                state.isRunning = snapshot.selectedChat?.isRunning ?? false
+                state.errorMessage = snapshot.selectedChat?.errorMessage ?? snapshot.selectionError?.description
+            } else if state.runID == nil, !state.isRunning {
+                state.selectedSnapshot = nil
+                state.messages = []
+                state.isRunning = false
+                state.errorMessage = snapshot.selectionError?.description
+            } else if let selectionError = snapshot.selectionError {
+                state.errorMessage = selectionError.description
+            }
+            state.sessions = snapshot.sessions.mapError(ChatPageError.init)
         }
     }
 
@@ -1473,10 +1459,6 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
         }
     }
 
-    private func setPersistenceError(_ error: Error) {
-        setState { $0.sessions = .error(ChatPageError(error)) }
-    }
-
     private func currentProviderDraft() -> ProviderSettingsDraft {
         ProviderSettingsDraft(
             baseURLString: state.providerSettings.baseURLString,
@@ -1515,18 +1497,17 @@ public enum ChatRoutes {
                 let clearProviderSettings = try? context.dependency(ClearProviderSettingsUseCase.self)
                 let validateProviderSettings = try? context.dependency(ValidateProviderSettingsUseCase.self)
                 let inspectRun = try? context.dependency(InspectRunUseCase.self)
-                let sessionRegistry = try context.dependency(ChatSessionServiceRegistry.self)
+                let workspace = try context.dependency(ChatWorkspaceService.self)
                 return AnyView(
                     Page(
                         interactor: ChatPageInteractor(
                             input: input,
-                            sessionRegistry: sessionRegistry,
+                            workspace: workspace,
                             loadProviderSettings: loadProviderSettings,
                             saveProviderSettings: saveProviderSettings,
                             clearProviderSettings: clearProviderSettings,
                             validateProviderSettings: validateProviderSettings,
-                            inspectRun: inspectRun,
-                            router: context.router
+                            inspectRun: inspectRun
                         ),
                         view: ChatPage.init
                     )
@@ -1550,17 +1531,17 @@ public enum ChatRoutes {
                 let saveProviderSettings = try? context.dependency(SaveProviderSettingsUseCase.self)
                 let clearProviderSettings = try? context.dependency(ClearProviderSettingsUseCase.self)
                 let validateProviderSettings = try? context.dependency(ValidateProviderSettingsUseCase.self)
-                let sessionRegistry = try context.dependency(ChatSessionServiceRegistry.self)
+                let workspace = try context.dependency(ChatWorkspaceService.self)
                 return AnyView(
                     Page(
                         interactor: ChatPageInteractor(
                             input: ChatRouteInput(runID: nil),
-                            sessionRegistry: sessionRegistry,
+                            workspace: workspace,
                             loadProviderSettings: loadProviderSettings,
                             saveProviderSettings: saveProviderSettings,
                             clearProviderSettings: clearProviderSettings,
                             validateProviderSettings: validateProviderSettings,
-                            router: context.router
+                            subscribeToWorkspace: false
                         ),
                         view: { state, handle in
                             ProviderSettingsSheet(state: state.providerSettings, handle: handle)

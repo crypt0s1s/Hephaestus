@@ -8,21 +8,28 @@ import SwiftUI
 
 @MainActor
 struct HephaestusAppShell: View {
-    @StateObject private var router = Router<AnyRouteInput, AnyModalInput>()
+    @StateObject private var router: Router<AnyRouteInput, AnyModalInput>
 
     private let registry: DestinationRegistry
     private let runtime: PersistentAppRuntime
     private let chatSessionRegistry: ChatSessionServiceRegistry
+    private let chatWorkspace: ChatWorkspaceService
     private let startupRoute: AnyRouteInput
 
     init() throws {
+        let appRouter = Router<AnyRouteInput, AnyModalInput>()
+        _router = StateObject(wrappedValue: appRouter)
         runtime = try PersistentAppRuntime(store: FileAppStateStore(fileURL: Self.defaultAppStateURL))
         chatSessionRegistry = ChatSessionServiceRegistry(
             createRun: runtime,
             streamUserMessage: runtime,
-            listSessions: runtime,
             loadSession: runtime,
             createSession: runtime
+        )
+        chatWorkspace = ChatWorkspaceService(
+            registry: chatSessionRegistry,
+            listSessions: runtime,
+            router: appRouter
         )
         registry = try DestinationRegistry(
             routes: [ChatRoutes.registration],
@@ -66,8 +73,8 @@ struct HephaestusAppShell: View {
                 return runtime
             } else if type == InspectRunUseCase.self {
                 return runtime
-            } else if type == ChatSessionServiceRegistry.self {
-                return chatSessionRegistry
+            } else if type == ChatWorkspaceService.self {
+                return chatWorkspace
             } else {
                 throw RouteBuildError.missingDependency(String(describing: type))
             }

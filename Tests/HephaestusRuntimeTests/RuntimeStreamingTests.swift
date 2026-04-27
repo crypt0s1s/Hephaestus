@@ -141,7 +141,7 @@ struct RuntimeStreamingTests {
 
     @Test
     @MainActor
-    func chatRouteRequiresAppLifetimeSessionRegistry() throws {
+    func chatRouteRequiresChatWorkspaceService() throws {
         let registry = try DestinationRegistry(
             routes: [ChatRoutes.registration],
             modals: []
@@ -151,9 +151,33 @@ struct RuntimeStreamingTests {
             throw RouteBuildError.missingDependency(String(describing: type))
         }
 
-        #expect(throws: RouteBuildError.missingDependency("ChatSessionServiceRegistry")) {
+        #expect(throws: RouteBuildError.missingDependency("ChatWorkspaceService")) {
             _ = try registry.buildRoute(input, context: context)
         }
+    }
+
+    @Test
+    @MainActor
+    func chatRouteBuildsWithWorkspaceServiceAndNoSessionRegistryDependency() throws {
+        let registry = try DestinationRegistry(
+            routes: [ChatRoutes.registration],
+            modals: []
+        )
+        let input = try AnyRouteInput(ChatRouteInput(runID: nil))
+        let workspace = ChatWorkspaceService(
+            registry: ChatSessionServiceRegistry(
+                createRun: BlockingCreateRunUseCase(runID: UUID()),
+                streamUserMessage: RecordingStreamUserMessageUseCase()
+            )
+        )
+        let context = RouteBuildContext(router: Router<AnyRouteInput, AnyModalInput>()) { type in
+            if type == ChatWorkspaceService.self {
+                return workspace
+            }
+            throw RouteBuildError.missingDependency(String(describing: type))
+        }
+
+        _ = try registry.buildRoute(input, context: context)
     }
 
     @Test
@@ -166,10 +190,10 @@ struct RuntimeStreamingTests {
             createRun: createRun,
             streamUserMessage: streamUserMessage
         )
+        let workspace = ChatWorkspaceService(registry: sessionRegistry)
         let interactor = ChatPageInteractor(
             input: ChatRouteInput(runID: nil),
-            sessionRegistry: sessionRegistry,
-            router: Router<AnyRouteInput, AnyModalInput>()
+            workspace: workspace
         )
 
         await interactor.handleAction(.changeDraft("first"))
@@ -199,10 +223,10 @@ struct RuntimeStreamingTests {
             createRun: createRun,
             streamUserMessage: streamUserMessage
         )
+        let workspace = ChatWorkspaceService(registry: sessionRegistry)
         let interactor = ChatPageInteractor(
             input: ChatRouteInput(runID: nil),
-            sessionRegistry: sessionRegistry,
-            router: Router<AnyRouteInput, AnyModalInput>()
+            workspace: workspace
         )
 
         await interactor.handleAction(.changeDraft(" \n "))
@@ -224,10 +248,10 @@ struct RuntimeStreamingTests {
             createRun: createRun,
             streamUserMessage: streamUserMessage
         )
+        let workspace = ChatWorkspaceService(registry: sessionRegistry)
         let interactor = ChatPageInteractor(
             input: ChatRouteInput(runID: nil),
-            sessionRegistry: sessionRegistry,
-            router: Router<AnyRouteInput, AnyModalInput>()
+            workspace: workspace
         )
 
         await interactor.handleAction(.changeDraft("first"))

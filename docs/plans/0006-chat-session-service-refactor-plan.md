@@ -20,7 +20,7 @@ The ADR decided:
 1. Per-chat services are `@MainActor` reference types for this slice.
 2. Services consume direct `streamUserMessage` streams and own event application.
 3. Services are keyed by persisted session ID, which is also the runtime run ID for persistent chats.
-4. `ChatSessionServiceRegistry` is app-lifetime and injected into route-built page interactors.
+4. `ChatWorkspaceService` is chat feature-lifetime and injected into route-built page interactors; it privately owns or is constructed with `ChatSessionServiceRegistry`.
 5. Services are retained for the app lifetime; eviction is deferred.
 6. Page disappearance detaches subscriptions only; explicit cancel cancels the selected service's active send task.
 7. Missing services are rebuilt from persisted sessions through `LoadSessionUseCase`.
@@ -48,13 +48,13 @@ flowchart TD
 
 The registry is a factory/cache, not a command facade. The interactor asks the registry for the currently selected chat service, then sends chat commands to that service. This keeps command ownership on the per-chat object and avoids splitting behavior between the registry and the service.
 
-## Next Refinement: Chat Workspace Service
+## Implemented Refinement: Chat Workspace Service
 
-The implemented shape still exposes `ChatSessionServiceRegistry` to `ChatPageInteractor`. That was a useful step for moving stream ownership out of the page interactor, but it is not the preferred long-term boundary.
+The first implemented shape exposed `ChatSessionServiceRegistry` to `ChatPageInteractor`. That was a useful step for moving stream ownership out of the page interactor, but it was not the preferred long-term boundary.
 
-The next refinement should introduce `ChatWorkspaceService` as the chat feature-lifecycle service. Avoid the generic name `ChatCoordinator`; it does not say what the object owns. `ChatWorkspaceService` should own the chat workspace state and hide session-service lookup from page interactors.
+The refinement introduces `ChatWorkspaceService` as the chat feature-lifecycle service. Avoid the generic name `ChatCoordinator`; it does not say what the object owns. `ChatWorkspaceService` owns the chat workspace state and hides session-service lookup from page interactors.
 
-`ChatSessionServiceRegistry` should become a private sub-object of `ChatWorkspaceService`. It may still be constructed by Stitch/app composition and passed into the workspace service for testability, but it should not be exposed as a page dependency or route-builder dependency.
+`ChatSessionServiceRegistry` is now a private sub-object of `ChatWorkspaceService`. It may still be constructed by Stitch/app composition and passed into the workspace service for testability, but it is not exposed as a page dependency or route-builder dependency.
 
 Target shape:
 
@@ -100,7 +100,7 @@ This gives three distinct lifetimes:
 | `ChatSessionServiceRegistry` | Workspace-private sub-object | Creates/reuses `ChatSessionService` instances and keeps the session-service cache. |
 | `ChatSessionService` | Per-chat lifecycle | Runtime IO, transcript projection, active turn state, cancellation, and per-chat errors. |
 
-When this refinement is implemented, update ADR-0009 or add a superseding ADR because it changes the public dependency boundary. For this slice, the `ChatWorkspaceService` refinement supersedes ADR-0009's interactor-to-registry boundary: page interactors should depend on `ChatWorkspaceService`, not directly on `ChatSessionServiceRegistry`.
+ADR-0009 has been updated for this public dependency boundary: page interactors depend on `ChatWorkspaceService`, not directly on `ChatSessionServiceRegistry`.
 
 ## Dependency Injection Scopes
 
@@ -113,7 +113,7 @@ The refactor should keep dependency injection explicit and scoped by lifetime. A
 | Page scope | `ChatPageInteractor`, selected chat subscription, provider settings panel state, inspector presentation state | `Page(interactor:view:)` |
 | Chat session scope | `ChatSessionService`, transcript snapshot cache, active send task, per-chat cancellation handle, runtime event subscription, per-chat error/running state | `ChatSessionServiceRegistry` |
 
-Current implemented DI flow:
+Previous implemented DI flow:
 
 1. The app shell builds app-scope services and injects them into route contexts.
 2. `ChatRoutes.registration` creates `ChatPageInteractor` with app-scope dependencies such as the session registry and page-level use cases.
@@ -121,11 +121,11 @@ Current implemented DI flow:
 4. `ChatSessionServiceRegistry` owns chat-session-scoped construction, reuse, and eviction.
 5. Each `ChatSessionService` receives a runtime-facing dependency, such as `PersistentAppRuntime` or narrower runtime use-case protocols, plus any per-session policy needed for that chat.
 
-Target DI flow after introducing `ChatWorkspaceService`:
+Implemented DI flow after introducing `ChatWorkspaceService`:
 
 1. Stitch/app composition builds runtime-facing use cases.
 2. Stitch/app composition builds `ChatSessionServiceRegistry`, or a small factory capable of building one.
-3. Stitch/app composition builds app/feature-scoped `ChatWorkspaceService(registry:router:...)`.
+3. Stitch/app composition builds app/feature-scoped `ChatWorkspaceService(registry:listSessions:...)`.
 4. Route builders inject `ChatWorkspaceService` into `ChatPageInteractor`.
 5. `ChatPageInteractor` forwards user intents to `ChatWorkspaceService` and subscribes to a workspace/page projection.
 6. `ChatWorkspaceService` privately asks its registry for per-chat services and forwards commands to the selected `ChatSessionService`.
@@ -195,6 +195,7 @@ Illustrative shape:
 struct ChatWorkspaceSnapshot: Equatable, Sendable {
     var selectedChatID: UUID?
     var selectedChat: ChatSessionSnapshot?
+    var selectionError: ChatWorkspaceError?
     var sessions: StoreState<[ChatSessionSummaryState], ChatWorkspaceError>
 }
 ```
@@ -205,7 +206,7 @@ Workspace-owned state should include:
 - selected `ChatSessionService` attachment,
 - selected service snapshot subscription,
 - sidebar/session summaries,
-- workspace-level loading/error state for summaries and chat selection,
+- workspace-level loading/error state for summaries and a separate selected-chat attachment error,
 - route-sync intent for selected chat changes, and
 - a workspace snapshot publisher for page interactors.
 
@@ -251,7 +252,7 @@ The service may rebuild its snapshot from persisted session data when created. I
 
 ### Chat Session Service Registry State
 
-`ChatSessionServiceRegistry` owns only the service index/cache. In the implemented slice it is app-lifetime and route-injected. In the next refinement it should be workspace-private: `ChatWorkspaceService` owns it, or is constructed with it, and page interactors never depend on it directly.
+`ChatSessionServiceRegistry` owns only the service index/cache. It is workspace-private: `ChatWorkspaceService` owns it, or is constructed with it, and page interactors never depend on it directly.
 
 It should create and reuse services, but it should not become the command handler for individual chat actions.
 

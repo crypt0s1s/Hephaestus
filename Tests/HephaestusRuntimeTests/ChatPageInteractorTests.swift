@@ -17,6 +17,7 @@ struct ChatPageInteractorTests {
             runID: runID,
             streamUserMessage: streamUserMessage
         )
+        interactor.onAppear()
 
         await interactor.handleAction(.changeDraft("plan the slice"))
         let sendTask = Task {
@@ -92,6 +93,7 @@ struct ChatPageInteractorTests {
             runID: runID,
             streamUserMessage: streamUserMessage
         )
+        interactor.onAppear()
 
         await interactor.handleAction(.changeDraft("first"))
         let failedSend = Task {
@@ -179,6 +181,7 @@ struct ChatPageInteractorTests {
             streamUserMessage: streamUserMessage,
             loadSession: sessions
         )
+        interactor.onAppear()
 
         await interactor.handleAction(.changeDraft("slow question"))
         let sendTask = Task {
@@ -230,6 +233,7 @@ struct ChatPageInteractorTests {
             createRun: createRun,
             streamUserMessage: streamUserMessage
         )
+        interactor.onAppear()
 
         await interactor.handleAction(.changeDraft("first"))
         await interactor.handleAction(.tapSend)
@@ -261,6 +265,7 @@ struct ChatPageInteractorTests {
             runID: runID,
             streamUserMessage: streamUserMessage
         )
+        interactor.onAppear()
 
         await interactor.handleAction(.changeDraft("loading"))
         #expect(!interactor.state.isRunning)
@@ -299,6 +304,7 @@ struct ChatPageInteractorTests {
             runID: runID,
             streamUserMessage: streamUserMessage
         )
+        interactor.onAppear()
 
         await interactor.handleAction(.changeDraft("first"))
         let sendTask = Task {
@@ -467,6 +473,187 @@ struct ChatPageInteractorTests {
         #expect(interactor.state.messages.isEmpty)
         #expect(interactor.state.draftText.isEmpty)
         #expect(await sessions.createdCount() == 1)
+    }
+
+    @Test
+    @MainActor
+    func selectingChatUpdatesNavigationRoute() async throws {
+        let currentID = UUID()
+        let targetID = UUID()
+        let router = Router<AnyRouteInput, AnyModalInput>()
+        let sessions = StubSessionUseCase(
+            sessions: [
+                PersistedSession(id: currentID, title: "Current"),
+                PersistedSession(id: targetID, title: "Target")
+            ]
+        )
+        let interactor = makeInteractor(
+            runID: currentID,
+            streamUserMessage: ImmediateStreamUserMessageUseCase(),
+            loadSession: sessions,
+            router: router
+        )
+
+        await interactor.handleAction(.tapChat(targetID))
+
+        let route = try #require(try router.path.last?.decode(ChatRouteInput.self))
+        #expect(route.runID == targetID)
+    }
+
+    @Test
+    @MainActor
+    func newChatUpdatesNavigationRoute() async throws {
+        let existingID = UUID()
+        let newID = UUID()
+        let router = Router<AnyRouteInput, AnyModalInput>()
+        let sessions = StubSessionUseCase(
+            sessions: [
+                PersistedSession(id: existingID, title: "Existing")
+            ],
+            createdSession: PersistedSession(id: newID, title: "New Chat")
+        )
+        let interactor = makeInteractor(
+            runID: existingID,
+            streamUserMessage: ImmediateStreamUserMessageUseCase(),
+            createSession: sessions,
+            router: router
+        )
+
+        await interactor.handleAction(.tapNewChat)
+
+        let route = try #require(try router.path.last?.decode(ChatRouteInput.self))
+        #expect(route.runID == newID)
+    }
+
+    @Test
+    @MainActor
+    func sendFromUnloadableSelectedChatSurfacesErrorWithoutCreatingNewChat() async throws {
+        let missingID = UUID()
+        let createRun = RecordingCreateRunUseCase(runID: UUID())
+        let streamUserMessage = ImmediateStreamUserMessageUseCase()
+        let interactor = makeInteractor(
+            runID: missingID,
+            createRun: createRun,
+            streamUserMessage: streamUserMessage,
+            loadSession: FailingLoadSessionUseCase()
+        )
+
+        await interactor.handleAction(.changeDraft("do not create"))
+        await interactor.handleAction(.tapSend)
+
+        #expect(!interactor.state.isRunning)
+        #expect(interactor.state.draftText == "do not create")
+        #expect(interactor.state.persistenceErrorMessage == nil)
+        #expect(interactor.state.errorMessage?.contains("boom") == true)
+        #expect(await createRun.calls() == 0)
+        #expect(await streamUserMessage.requests().isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func failedSelectedChatLoadPreservesLoadedSidebarSummaries() async throws {
+        let missingID = UUID()
+        let listedID = UUID()
+        let sessions = StubSessionUseCase(
+            sessions: [
+                PersistedSession(id: listedID, title: "Visible summary")
+            ]
+        )
+        let interactor = makeInteractor(
+            runID: missingID,
+            streamUserMessage: ImmediateStreamUserMessageUseCase(),
+            listSessions: sessions,
+            loadSession: FailingLoadSessionUseCase()
+        )
+
+        interactor.onAppear()
+        await waitUntil {
+            interactor.state.sessionSummaries.count == 1
+        }
+
+        await interactor.handleAction(.changeDraft("keep sidebar"))
+        await interactor.handleAction(.tapSend)
+
+        #expect(interactor.state.sessionSummaries.map(\.title) == ["Visible summary"])
+        #expect(!interactor.state.isLoadingSessions)
+        #expect(interactor.state.persistenceErrorMessage == nil)
+        #expect(interactor.state.errorMessage?.contains("boom") == true)
+        #expect(interactor.state.draftText == "keep sidebar")
+    }
+
+    @Test
+    @MainActor
+    func failedRouteSendDoesNotUsePreviouslySelectedWorkspaceChat() async throws {
+        let selectedID = UUID()
+        let missingID = UUID()
+        let sessions = StubSessionUseCase(
+            sessions: [
+                PersistedSession(id: selectedID, title: "Selected")
+            ]
+        )
+        let streamUserMessage = ImmediateStreamUserMessageUseCase()
+        let registry = ChatSessionServiceRegistry(
+            createRun: RecordingCreateRunUseCase(runID: UUID()),
+            streamUserMessage: streamUserMessage,
+            loadSession: sessions
+        )
+        let workspace = ChatWorkspaceService(registry: registry, listSessions: sessions)
+        await workspace.selectChat(selectedID, force: true)
+        let interactor = makeInteractor(
+            runID: missingID,
+            streamUserMessage: streamUserMessage,
+            workspace: workspace
+        )
+
+        await interactor.handleAction(.changeDraft("must not go to selected"))
+        await interactor.handleAction(.tapSend)
+
+        #expect(workspace.snapshot.selectedChatID == nil)
+        #expect(interactor.state.runID == missingID)
+        #expect(interactor.state.draftText == "must not go to selected")
+        #expect(interactor.state.errorMessage != nil)
+        #expect(await streamUserMessage.requests().isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func routePageDoesNotApplyPreviousWorkspaceSelectionBeforeInitialSelection() async throws {
+        let selectedID = UUID()
+        let missingID = UUID()
+        let sessions = StubSessionUseCase(
+            sessions: [
+                PersistedSession(
+                    id: selectedID,
+                    title: "Selected",
+                    messages: [
+                        RunMessage(role: .user, parts: [.text("previous chat")], source: .localUser, turnID: UUID())
+                    ]
+                )
+            ]
+        )
+        let streamUserMessage = ImmediateStreamUserMessageUseCase()
+        let registry = ChatSessionServiceRegistry(
+            createRun: RecordingCreateRunUseCase(runID: UUID()),
+            streamUserMessage: streamUserMessage,
+            loadSession: sessions
+        )
+        let workspace = ChatWorkspaceService(registry: registry, listSessions: sessions)
+        await workspace.selectChat(selectedID, force: true)
+        let interactor = makeInteractor(
+            runID: missingID,
+            streamUserMessage: streamUserMessage,
+            workspace: workspace
+        )
+
+        interactor.onAppear()
+        await waitUntil {
+            interactor.state.errorMessage != nil
+        }
+
+        #expect(interactor.state.runID == missingID)
+        #expect(interactor.state.messages.isEmpty)
+        #expect(interactor.state.errorMessage != nil)
+        #expect(workspace.snapshot.selectedChatID == nil)
     }
 
     @Test
@@ -712,6 +899,7 @@ private func makeInteractor(
     createRun: CreateRunUseCase = RecordingCreateRunUseCase(runID: UUID()),
     streamUserMessage: StreamUserMessageUseCase,
     sessionRegistry: ChatSessionServiceRegistry? = nil,
+    workspace: ChatWorkspaceService? = nil,
     loadProviderSettings: LoadProviderSettingsUseCase? = nil,
     saveProviderSettings: SaveProviderSettingsUseCase? = nil,
     clearProviderSettings: ClearProviderSettingsUseCase? = nil,
@@ -719,24 +907,28 @@ private func makeInteractor(
     listSessions: ListSessionsUseCase? = nil,
     loadSession: LoadSessionUseCase? = nil,
     createSession: CreateSessionUseCase? = nil,
-    inspectRun: InspectRunUseCase? = nil
+    inspectRun: InspectRunUseCase? = nil,
+    router: Router<AnyRouteInput, AnyModalInput>? = nil
 ) -> ChatPageInteractor {
     let registry = sessionRegistry ?? ChatSessionServiceRegistry(
         createRun: createRun,
         streamUserMessage: streamUserMessage,
-        listSessions: listSessions,
         loadSession: loadSession,
         createSession: createSession
     )
+    let workspace = workspace ?? ChatWorkspaceService(
+        registry: registry,
+        listSessions: listSessions,
+        router: router
+    )
     return ChatPageInteractor(
         input: ChatRouteInput(runID: runID),
-        sessionRegistry: registry,
+        workspace: workspace,
         loadProviderSettings: loadProviderSettings,
         saveProviderSettings: saveProviderSettings,
         clearProviderSettings: clearProviderSettings,
         validateProviderSettings: validateProviderSettings,
-        inspectRun: inspectRun,
-        router: Router<AnyRouteInput, AnyModalInput>()
+        inspectRun: inspectRun
     )
 }
 
@@ -1019,6 +1211,12 @@ private actor StubInspectRunUseCase: InspectRunUseCase {
 
 private struct FailingListSessionsUseCase: ListSessionsUseCase {
     func listSessions() async throws -> [PersistedSessionSummary] {
+        throw StubFailure.boom
+    }
+}
+
+private struct FailingLoadSessionUseCase: LoadSessionUseCase {
+    func loadSession(id: UUID) async throws -> PersistedSession {
         throw StubFailure.boom
     }
 }

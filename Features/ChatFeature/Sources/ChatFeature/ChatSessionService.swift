@@ -1,8 +1,21 @@
 import Anvil
+import ChatContracts
 import Foundation
 import HephaestusRuntime
 
 public struct ChatSessionError: Error, Equatable, Sendable, CustomStringConvertible {
+    public let description: String
+
+    public init(_ description: String) {
+        self.description = description
+    }
+
+    public init(_ error: Error) {
+        self.init(String(describing: error))
+    }
+}
+
+public struct ChatWorkspaceError: Error, Equatable, Sendable, CustomStringConvertible {
     public let description: String
 
     public init(_ description: String) {
@@ -65,6 +78,28 @@ public struct ChatSessionSnapshot: Equatable, Sendable {
     }
 }
 
+public struct ChatWorkspaceSnapshot: Equatable, Sendable {
+    public var revision: Int
+    public var selectedChatID: UUID?
+    public var selectedChat: ChatSessionSnapshot?
+    public var selectionError: ChatWorkspaceError?
+    public var sessions: StoreState<[ChatSessionSummaryState], ChatWorkspaceError>
+
+    public init(
+        revision: Int = 0,
+        selectedChatID: UUID? = nil,
+        selectedChat: ChatSessionSnapshot? = nil,
+        selectionError: ChatWorkspaceError? = nil,
+        sessions: StoreState<[ChatSessionSummaryState], ChatWorkspaceError> = .loaded([])
+    ) {
+        self.revision = revision
+        self.selectedChatID = selectedChatID
+        self.selectedChat = selectedChat
+        self.selectionError = selectionError
+        self.sessions = sessions
+    }
+}
+
 @MainActor
 public final class ChatSessionService {
     public private(set) var snapshot: ChatSessionSnapshot
@@ -106,11 +141,13 @@ public final class ChatSessionService {
         snapshot.id
     }
 
-    public func subscribeSnapshots() -> AsyncStream<ChatSessionSnapshot> {
+    public func subscribeSnapshots(includeCurrent: Bool = true) -> AsyncStream<ChatSessionSnapshot> {
         AsyncStream { continuation in
             let subscriptionID = UUID()
             snapshotContinuations[subscriptionID] = continuation
-            continuation.yield(snapshot)
+            if includeCurrent {
+                continuation.yield(snapshot)
+            }
             continuation.onTermination = { @Sendable _ in
                 Task { @MainActor in
                     self.snapshotContinuations[subscriptionID] = nil
@@ -246,41 +283,27 @@ public final class ChatSessionService {
 
 @MainActor
 public final class ChatSessionServiceRegistry {
-    public private(set) var summaries: StoreState<[ChatSessionSummaryState], ChatSessionError> = .loaded([])
-
     private let createRun: CreateRunUseCase
     private let streamUserMessage: StreamUserMessageUseCase
-    private let listSessions: ListSessionsUseCase?
     private let loadSession: LoadSessionUseCase?
     private let createSession: CreateSessionUseCase?
     private var services: [UUID: ChatSessionService] = [:]
-    private var summaryContinuations: [UUID: AsyncStream<StoreState<[ChatSessionSummaryState], ChatSessionError>>.Continuation] = [:]
+    private var onServiceSummaryChanged: @MainActor () -> Void = {}
 
     public init(
         createRun: CreateRunUseCase,
         streamUserMessage: StreamUserMessageUseCase,
-        listSessions: ListSessionsUseCase? = nil,
         loadSession: LoadSessionUseCase? = nil,
         createSession: CreateSessionUseCase? = nil
     ) {
         self.createRun = createRun
         self.streamUserMessage = streamUserMessage
-        self.listSessions = listSessions
         self.loadSession = loadSession
         self.createSession = createSession
     }
 
-    public func subscribeSummaries() -> AsyncStream<StoreState<[ChatSessionSummaryState], ChatSessionError>> {
-        AsyncStream { continuation in
-            let subscriptionID = UUID()
-            summaryContinuations[subscriptionID] = continuation
-            continuation.yield(summaries)
-            continuation.onTermination = { @Sendable _ in
-                Task { @MainActor in
-                    self.summaryContinuations[subscriptionID] = nil
-                }
-            }
-        }
+    public func setOnServiceSummaryChanged(_ onServiceSummaryChanged: @escaping @MainActor () -> Void) {
+        self.onServiceSummaryChanged = onServiceSummaryChanged
     }
 
     public func service(for id: UUID) async throws -> ChatSessionService {
@@ -310,30 +333,14 @@ public final class ChatSessionServiceRegistry {
         }
 
         services[service.id] = service
-        await refreshSummaries()
         return service
-    }
-
-    public func refreshSummaries() async {
-        guard let listSessions else { return }
-        setSummaries(.loading(placeholder: summaries.data))
-        do {
-            let summaries = try await listSessions.listSessions()
-            setSummaries(.loaded(summaries.map(ChatSessionSummaryState.init(summary:))))
-        } catch {
-            setSummaries(.error(ChatSessionError(error)))
-        }
     }
 
     private func makeService(session: PersistedSession) -> ChatSessionService {
         ChatSessionService(
             session: session,
             streamUserMessage: streamUserMessage,
-            onSummaryChanged: { [weak self] in
-                Task { @MainActor in
-                    await self?.refreshSummaries()
-                }
-            }
+            onSummaryChanged: onServiceSummaryChanged
         )
     }
 
@@ -341,18 +348,186 @@ public final class ChatSessionServiceRegistry {
         ChatSessionService(
             snapshot: snapshot,
             streamUserMessage: streamUserMessage,
-            onSummaryChanged: { [weak self] in
-                Task { @MainActor in
-                    await self?.refreshSummaries()
-                }
-            }
+            onSummaryChanged: onServiceSummaryChanged
         )
     }
+}
 
-    private func setSummaries(_ next: StoreState<[ChatSessionSummaryState], ChatSessionError>) {
-        summaries = next
-        for continuation in summaryContinuations.values {
-            continuation.yield(next)
+@MainActor
+public final class ChatWorkspaceService {
+    public private(set) var snapshot: ChatWorkspaceSnapshot
+
+    private let registry: ChatSessionServiceRegistry
+    private let listSessions: ListSessionsUseCase?
+    private let router: Router<AnyRouteInput, AnyModalInput>?
+    private var selectedService: ChatSessionService?
+    private var selectedSnapshotTask: Task<Void, Never>?
+    private var snapshotContinuations: [UUID: AsyncStream<ChatWorkspaceSnapshot>.Continuation] = [:]
+
+    public init(
+        registry: ChatSessionServiceRegistry,
+        listSessions: ListSessionsUseCase? = nil,
+        router: Router<AnyRouteInput, AnyModalInput>? = nil,
+        snapshot: ChatWorkspaceSnapshot = ChatWorkspaceSnapshot()
+    ) {
+        self.registry = registry
+        self.listSessions = listSessions
+        self.router = router
+        self.snapshot = snapshot
+        registry.setOnServiceSummaryChanged { [weak self] in
+            Task { @MainActor in
+                await self?.refreshSummaries()
+            }
+        }
+    }
+
+    deinit {
+        selectedSnapshotTask?.cancel()
+    }
+
+    public func subscribeSnapshots() -> AsyncStream<ChatWorkspaceSnapshot> {
+        AsyncStream { continuation in
+            let subscriptionID = UUID()
+            snapshotContinuations[subscriptionID] = continuation
+            continuation.yield(snapshot)
+            continuation.onTermination = { @Sendable _ in
+                Task { @MainActor in
+                    self.snapshotContinuations[subscriptionID] = nil
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    public func selectChat(_ id: UUID, force: Bool = false) async -> Bool {
+        guard force || snapshot.selectedChatID != id else { return false }
+        do {
+            let service = try await registry.service(for: id)
+            attach(to: service)
+            return true
+        } catch {
+            detachSelection(error: ChatWorkspaceError(error))
+            return false
+        }
+    }
+
+    @discardableResult
+    public func createNewChat(title: String? = nil) async -> Bool {
+        do {
+            let service = try await registry.createService(title: title)
+            attach(to: service)
+            await refreshSummaries()
+            return true
+        } catch {
+            setSessions(.error(ChatWorkspaceError(error)))
+            return false
+        }
+    }
+
+    public func sendMessage(_ text: String) async -> Bool {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else { return false }
+
+        let service: ChatSessionService
+        if let selectedService {
+            service = selectedService
+        } else {
+            do {
+                service = try await registry.createService(title: nil)
+                attach(to: service)
+                await refreshSummaries()
+            } catch {
+                setSessions(.error(ChatWorkspaceError(error)))
+                return false
+            }
+        }
+
+        service.send(trimmedText)
+        applySelectedServiceSnapshot(service.snapshot)
+        return true
+    }
+
+    public func cancelSelectedTurn() {
+        selectedService?.cancelActiveTurn()
+        if let selectedService {
+            applySelectedServiceSnapshot(selectedService.snapshot)
+        }
+    }
+
+    public func refreshSummaries() async {
+        guard let listSessions else { return }
+        setSessions(.loading(placeholder: snapshot.sessions.data))
+        do {
+            let summaries = try await listSessions.listSessions()
+            setSessions(.loaded(summaries.map(ChatSessionSummaryState.init(summary:))))
+        } catch {
+            setSessions(.error(ChatWorkspaceError(error)))
+        }
+    }
+
+    private func attach(to service: ChatSessionService) {
+        selectedSnapshotTask?.cancel()
+        selectedService = service
+        updateSnapshot { snapshot in
+            snapshot.selectedChatID = service.id
+            snapshot.selectedChat = service.snapshot
+            snapshot.selectionError = nil
+        }
+        syncSelectedRoute(service.id)
+        selectedSnapshotTask = Task { [weak self, service] in
+            for await snapshot in service.subscribeSnapshots(includeCurrent: false) {
+                await MainActor.run {
+                    self?.applySelectedServiceSnapshot(snapshot)
+                }
+            }
+        }
+    }
+
+    private func detachSelection(error: ChatWorkspaceError) {
+        selectedSnapshotTask?.cancel()
+        selectedSnapshotTask = nil
+        selectedService = nil
+        updateSnapshot { snapshot in
+            snapshot.selectedChatID = nil
+            snapshot.selectedChat = nil
+            snapshot.selectionError = error
+        }
+    }
+
+    private func syncSelectedRoute(_ id: UUID) {
+        guard let router,
+              let route = try? AnyRouteInput(ChatRouteInput(runID: id))
+        else { return }
+        if let current = router.path.last,
+           (try? current.decode(ChatRouteInput.self).runID) == id {
+            return
+        }
+        router.replaceStack([route])
+    }
+
+    private func applySelectedServiceSnapshot(_ serviceSnapshot: ChatSessionSnapshot) {
+        guard snapshot.selectedChatID == serviceSnapshot.id else { return }
+        updateSnapshot { snapshot in
+            snapshot.selectedChatID = serviceSnapshot.id
+            snapshot.selectedChat = serviceSnapshot
+        }
+    }
+
+    private func setSessions(_ sessions: StoreState<[ChatSessionSummaryState], ChatWorkspaceError>) {
+        updateSnapshot { snapshot in
+            snapshot.sessions = sessions
+        }
+    }
+
+    private func updateSnapshot(_ update: (inout ChatWorkspaceSnapshot) -> Void) {
+        update(&snapshot)
+        snapshot.revision += 1
+        publishSnapshot()
+    }
+
+    private func publishSnapshot() {
+        for continuation in snapshotContinuations.values {
+            continuation.yield(snapshot)
         }
     }
 }
