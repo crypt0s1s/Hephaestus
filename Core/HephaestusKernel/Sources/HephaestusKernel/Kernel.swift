@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Agent: Sendable, Hashable {
+public struct Agent: Sendable, Hashable, Codable {
     public let id: UUID
     public let name: String
     public let profile: AgentProfile
@@ -12,7 +12,7 @@ public struct Agent: Sendable, Hashable {
     }
 }
 
-public struct AgentProfile: Sendable, Hashable {
+public struct AgentProfile: Sendable, Hashable, Codable {
     public let id: UUID
     public let name: String
     public let systemPrompt: String
@@ -34,14 +34,14 @@ public struct AgentProfile: Sendable, Hashable {
     }
 }
 
-public enum RunStatus: Sendable, Hashable {
+public enum RunStatus: Sendable, Hashable, Codable {
     case idle
     case running
     case failed
     case cancelled
 }
 
-public enum TurnStatus: Sendable, Hashable {
+public enum TurnStatus: Sendable, Hashable, Codable {
     case accepted
     case preparingContext
     case awaitingProvider
@@ -104,7 +104,7 @@ public struct RunMessage: Sendable, Hashable, Identifiable, Codable {
     }
 }
 
-public struct Turn: Sendable, Hashable, Identifiable {
+public struct Turn: Sendable, Hashable, Identifiable, Codable {
     public let id: UUID
     public let runID: UUID
     public var status: TurnStatus
@@ -135,15 +135,34 @@ public struct RunSnapshot: Sendable, Hashable {
     public let status: RunStatus
     public let activeTurn: Turn?
     public let messages: [RunMessage]
+    public let turns: [Turn]
+
+    public init(
+        runID: UUID,
+        agent: Agent,
+        status: RunStatus,
+        activeTurn: Turn?,
+        messages: [RunMessage],
+        turns: [Turn]
+    ) {
+        self.runID = runID
+        self.agent = agent
+        self.status = status
+        self.activeTurn = activeTurn
+        self.messages = messages
+        self.turns = turns
+    }
 }
 
-public struct ContextAssemblyTrace: Sendable, Hashable {
+public struct ContextAssemblyTrace: Sendable, Hashable, Codable {
     public let includedMessageIDs: [UUID]
     public let excludedMessageIDs: [UUID]
+    public let messageLimit: Int?
 
-    public init(includedMessageIDs: [UUID], excludedMessageIDs: [UUID]) {
+    public init(includedMessageIDs: [UUID], excludedMessageIDs: [UUID], messageLimit: Int? = nil) {
         self.includedMessageIDs = includedMessageIDs
         self.excludedMessageIDs = excludedMessageIDs
+        self.messageLimit = messageLimit
     }
 }
 
@@ -189,13 +208,14 @@ public struct RecentContextManager: ContextManaging {
             currentUserMessageID: newMessage.id,
             trace: ContextAssemblyTrace(
                 includedMessageIDs: selected.map(\.id),
-                excludedMessageIDs: excluded.map(\.id)
+                excludedMessageIDs: excluded.map(\.id),
+                messageLimit: messageLimit
             )
         )
     }
 }
 
-public struct ProviderMessage: Sendable, Hashable {
+public struct ProviderMessage: Sendable, Hashable, Codable {
     public let role: MessageRole
     public let text: String
 
@@ -205,7 +225,7 @@ public struct ProviderMessage: Sendable, Hashable {
     }
 }
 
-public struct ProviderRequest: Sendable, Hashable, Identifiable {
+public struct ProviderRequest: Sendable, Hashable, Identifiable, Codable {
     public let id: UUID
     public let runID: UUID
     public let turnID: UUID
@@ -260,6 +280,7 @@ public protocol ProviderClient: Sendable {
 public enum RunEvent: Sendable, Hashable, Identifiable {
     case userMessageAccepted(EventHeader, RunMessage)
     case contextPrepared(EventHeader, ContextAssemblyTrace)
+    case providerRequestPrepared(EventHeader, ProviderRequest)
     case providerChunkReceived(EventHeader, UUID, String)
     case assistantMessageCompleted(EventHeader, RunMessage)
     case turnCancelled(EventHeader)
@@ -271,6 +292,7 @@ public enum RunEvent: Sendable, Hashable, Identifiable {
         switch self {
         case .userMessageAccepted(let header, _),
              .contextPrepared(let header, _),
+             .providerRequestPrepared(let header, _),
              .providerChunkReceived(let header, _, _),
              .assistantMessageCompleted(let header, _),
              .turnCancelled(let header),
@@ -311,12 +333,18 @@ public actor Run {
         id: UUID = UUID(),
         agent: Agent,
         contextManager: ContextManaging,
-        provider: ProviderClient
+        provider: ProviderClient,
+        initialMessages: [RunMessage] = [],
+        initialTurns: [Turn] = [],
+        initialSequence: Int = 0
     ) {
         self.id = id
         self.agent = agent
         self.contextManager = contextManager
         self.provider = provider
+        self.messages = initialMessages
+        self.turns = initialTurns
+        self.sequence = initialSequence
     }
 
     public func snapshot() -> RunSnapshot {
@@ -325,7 +353,8 @@ public actor Run {
             agent: agent,
             status: status,
             activeTurn: activeTurn,
-            messages: messages
+            messages: messages,
+            turns: turns
         )
     }
 
@@ -387,6 +416,10 @@ public actor Run {
             turn.status = .streaming
             turn.providerRequestID = request.id
             activeTurn = turn
+            if let index = turns.firstIndex(where: { $0.id == turn.id }) {
+                turns[index] = turn
+            }
+            continuation.yield(nextEvent(.providerRequestPrepared(request), turnID: turnID))
 
             var responseText = ""
             for try await chunk in provider.stream(request: request) {
@@ -428,7 +461,7 @@ public actor Run {
             if let index = turns.firstIndex(where: { $0.id == turn.id }) {
                 turns[index] = turn
             }
-            status = .failed
+            status = .idle
             continuation.yield(nextEvent(.turnFailed(String(describing: error)), turnID: turnID))
             continuation.finish(throwing: error)
         }
@@ -437,6 +470,7 @@ public actor Run {
     private enum PendingRunEvent {
         case userMessageAccepted(RunMessage)
         case contextPrepared(ContextAssemblyTrace)
+        case providerRequestPrepared(ProviderRequest)
         case providerChunkReceived(UUID, String)
         case assistantMessageCompleted(RunMessage)
         case turnCancelled
@@ -451,6 +485,8 @@ public actor Run {
             return .userMessageAccepted(header, message)
         case .contextPrepared(let trace):
             return .contextPrepared(header, trace)
+        case .providerRequestPrepared(let request):
+            return .providerRequestPrepared(header, request)
         case .providerChunkReceived(let requestID, let text):
             return .providerChunkReceived(header, requestID, text)
         case .assistantMessageCompleted(let message):

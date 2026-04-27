@@ -25,6 +25,7 @@ The project needs a local SwiftUI architecture convention for pages that separat
 - Use present-tense actions that represent user or view events.
 - Keep lifecycle methods separate from actions.
 - Centralize async task handling and cancellation.
+- Keep interactors scoped to the page lifecycle, not to durable runtime or domain lifecycles.
 - Ensure state mutation happens on the main actor.
 - Make page views easy to preview and test without constructing runtime dependencies.
 - Keep the pattern lightweight enough for the first chat UI.
@@ -45,6 +46,7 @@ The project needs a local SwiftUI architecture convention for pages that separat
 * User actions should be explicit and easy to trace.
 * Async work should not leak into button closures or layout code.
 * Lifecycle binding should be consistent across pages.
+* Interactors should not become long-lived service objects by accident.
 * The architecture should work with Stitch dependency injection and use-case boundaries.
 
 ---
@@ -104,7 +106,9 @@ Hephaestus will use state/action SwiftUI page views backed by interactors, with 
 
 This architecture keeps rendering, action handling, and side effects separated while staying lightweight. It gives the project a clear convention for the first chat UI and for later screens that need to observe runs, inspect context, or coordinate use cases.
 
-The term `Interactor` is used instead of `ViewModel` because the object does more than shape data for the view. It handles actions, owns presentation state, manages async tasks, binds lifecycle, and calls use cases.
+The term `Interactor` is used instead of `ViewModel` because the object does more than shape data for the view. It handles actions, owns presentation state, manages page-scoped async tasks, binds lifecycle, and calls use cases.
+
+Interactors are still view-lifecycle objects. They must not become the durable owner of runtime sessions, provider IO, persisted domain state, or background work that needs to continue after the page disappears. If work must survive view disappearance, it belongs in an app-lifetime or domain-lifetime service that the interactor attaches to while visible.
 
 The generic host should be called `Page`, and top-level screens should be composed with:
 
@@ -157,6 +161,45 @@ The frontend infrastructure should include:
 - `BaseInteractor<State, Action>`
 - `Page<Interactor, Content>`
 - `PageTaskScope`
+- `StoreState<Data, Failure>`
+
+### Core Principle: Interactors Are Page-Lifecycle Adapters
+
+Interactors are owned by `Page` through `@StateObject` and are bound to SwiftUI lifecycle hooks. They are therefore suitable for:
+
+- translating view actions into use-case calls,
+- owning renderable page state,
+- managing page-scoped tasks and subscriptions,
+- mapping service snapshots into view state, and
+- requesting navigation or presentation changes.
+
+They are not suitable as the source of truth for work with a longer lifetime than the page. Interactors should not own:
+
+- long-running provider or runtime IO that must continue after `onDisappear`,
+- persisted domain state,
+- per-session caches that outlive the visible screen,
+- cross-page coordination, or
+- background tasks whose cancellation semantics are domain decisions rather than view lifecycle decisions.
+
+When a feature needs durable behavior, introduce a service at the appropriate lifetime boundary and have the interactor subscribe to it. The interactor may detach on disappear without corrupting the underlying operation.
+
+Dependency injection should follow the same lifetime boundary. App-scope dependencies can be injected into route builders and interactors through the route context. Page-scope dependencies belong to the interactor. Domain services with a longer lifetime, such as a chat-session service, should be created and retained by an app-scope registry or container, not by the page interactor.
+
+### Store State
+
+Page and service state should represent loadable data with a shared model instead of parallel booleans and optional errors.
+
+The shared shape is:
+
+```swift
+enum StoreState<Data, Failure: Error> {
+    case loading(placeholder: Data? = nil)
+    case loaded(Data)
+    case error(Failure)
+}
+```
+
+Use `StoreState` when a page or service renders data that can be loading, loaded, or failed. Prefer this over local pairs such as `isLoadingSessions` plus `persistenceErrorMessage`, or `isLoading` plus optional data plus optional error. The optional placeholder lets the UI keep rendering stale data while a refresh is in flight.
 
 ### `BaseInteractor`
 
@@ -260,13 +303,18 @@ Use present-tense names such as:
 - `tapSend`
 - `tapRetry`
 - `tapCancel`
+- `tapChat(UUID)`
 - `changeDraft(String)`
 - `scrollToBottom`
 - `reachHistoryEnd`
 
+Avoid naming user actions after implementation details such as `openSession`. If selecting a chat requires loading or opening a session, expose the user intent as `tapChat(id)` and route to a private interactor helper such as `openSession(id)`.
+
 Do not use actions for internal runtime events that the view does not directly produce. Provider chunks, run completion, and context assembly events should be observed by the interactor or use cases and mapped into state.
 
 Lifecycle should not be modeled as actions. Use `onAppear()` and `onDisappear()` on the interactor instead.
+
+Runtime events that represent durable domain progress should normally be owned by a runtime or session service first. The interactor should observe a page-appropriate projection of that service while the view is visible.
 
 ### Page Views
 
@@ -305,11 +353,14 @@ This decision is correct if the first chat UI can be built without views directl
 - State mutation in interactors happens through `setState(_:)`.
 - Async work is launched through the interactor task scope.
 - The task scope is main-actor-owned and cancels page tasks on disappear.
+- Long-running runtime work can continue correctly when the page interactor disappears, because that work is owned outside the interactor.
 
 ### Monitoring
 
 - Watch for views calling use cases or providers directly.
 - Watch for interactors growing large without private handler methods.
+- Watch for interactors owning app-lifetime or session-lifetime services directly instead of subscribing to them.
+- Watch for interactors becoming the only source of truth for persisted or background domain state.
 - Watch for runtime events being modeled as view actions.
 - Watch for state mutation outside `setState(_:)`.
 

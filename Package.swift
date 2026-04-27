@@ -48,7 +48,7 @@ let package = Package(
         ),
         .target(
             name: "ChatFeature",
-            dependencies: ["Anvil", "ChatContracts", "HephaestusRuntime"],
+            dependencies: ["Anvil", "ChatContracts", "HephaestusKernel", "HephaestusRuntime"],
             path: "Features/ChatFeature/Sources/ChatFeature"
         ),
         .executableTarget(

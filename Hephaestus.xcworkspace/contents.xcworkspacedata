@@ -4,4 +4,7 @@
    <FileRef
       location = "container:Hephaestus.xcodeproj">
    </FileRef>
+   <FileRef
+      location = "container:Package.swift">
+   </FileRef>
 </Workspace>

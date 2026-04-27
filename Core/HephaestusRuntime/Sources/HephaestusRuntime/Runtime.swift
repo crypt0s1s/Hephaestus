@@ -5,6 +5,7 @@ public enum RuntimeEvent: Sendable, Hashable {
     case runCreated(RuntimeEventHeader, UUID)
     case userMessageAccepted(RuntimeEventHeader, messageID: UUID, text: String)
     case contextPrepared(RuntimeEventHeader, includedMessageCount: Int)
+    case providerRequestPrepared(RuntimeEventHeader, requestID: UUID, model: String, messageCount: Int)
     case assistantTextDelta(RuntimeEventHeader, String)
     case assistantMessageCompleted(RuntimeEventHeader, messageID: UUID, text: String)
     case turnCancelled(RuntimeEventHeader)
@@ -15,6 +16,7 @@ public enum RuntimeEvent: Sendable, Hashable {
         case .runCreated(let header, _),
              .userMessageAccepted(let header, _, _),
              .contextPrepared(let header, _),
+             .providerRequestPrepared(let header, _, _, _),
              .assistantTextDelta(let header, _),
              .assistantMessageCompleted(let header, _, _),
              .turnCancelled(let header),
@@ -79,6 +81,32 @@ public enum RuntimeFailure: Error, Equatable {
     case runNotFound(UUID)
 }
 
+extension RuntimeEvent {
+    public init(_ event: RunEvent) {
+        switch event {
+        case .userMessageAccepted(let header, let message):
+            self = .userMessageAccepted(RuntimeEventHeader(header), messageID: message.id, text: message.text)
+        case .contextPrepared(let header, let trace):
+            self = .contextPrepared(RuntimeEventHeader(header), includedMessageCount: trace.includedMessageIDs.count)
+        case .providerRequestPrepared(let header, let request):
+            self = .providerRequestPrepared(
+                RuntimeEventHeader(header),
+                requestID: request.id,
+                model: request.model,
+                messageCount: request.messages.count
+            )
+        case .providerChunkReceived(let header, _, let text):
+            self = .assistantTextDelta(RuntimeEventHeader(header), text)
+        case .assistantMessageCompleted(let header, let message):
+            self = .assistantMessageCompleted(RuntimeEventHeader(header), messageID: message.id, text: message.text)
+        case .turnCancelled(let header):
+            self = .turnCancelled(RuntimeEventHeader(header))
+        case .turnFailed(let header, let reason):
+            self = .turnFailed(RuntimeEventHeader(header), reason)
+        }
+    }
+}
+
 public actor RuntimeEventHub {
     private var continuations: [UUID: [UUID: AsyncStream<RuntimeEvent>.Continuation]] = [:]
 
@@ -132,6 +160,14 @@ public actor InMemoryRunStore {
         }
         return run
     }
+
+    public func contains(id: UUID) -> Bool {
+        runs[id] != nil
+    }
+
+    public func insert(_ run: Run) {
+        runs[run.id] = run
+    }
 }
 
 public struct DefaultCreateRunUseCase: CreateRunUseCase {
@@ -166,7 +202,7 @@ public struct DefaultStreamUserMessageUseCase: StreamUserMessageUseCase {
             let task = Task {
                 do {
                     for try await event in runEvents {
-                        let runtimeEvent = map(event)
+                        let runtimeEvent = RuntimeEvent(event)
                         await eventHub.publish(runtimeEvent, runID: runID)
                         continuation.yield(runtimeEvent)
                     }
@@ -181,22 +217,6 @@ public struct DefaultStreamUserMessageUseCase: StreamUserMessageUseCase {
         }
     }
 
-    private func map(_ event: RunEvent) -> RuntimeEvent {
-        switch event {
-        case .userMessageAccepted(let header, let message):
-            return .userMessageAccepted(RuntimeEventHeader(header), messageID: message.id, text: message.text)
-        case .contextPrepared(let header, let trace):
-            return .contextPrepared(RuntimeEventHeader(header), includedMessageCount: trace.includedMessageIDs.count)
-        case .providerChunkReceived(let header, _, let text):
-            return .assistantTextDelta(RuntimeEventHeader(header), text)
-        case .assistantMessageCompleted(let header, let message):
-            return .assistantMessageCompleted(RuntimeEventHeader(header), messageID: message.id, text: message.text)
-        case .turnCancelled(let header):
-            return .turnCancelled(RuntimeEventHeader(header))
-        case .turnFailed(let header, let reason):
-            return .turnFailed(RuntimeEventHeader(header), reason)
-        }
-    }
 }
 
 public struct DefaultSubmitUserMessageUseCase: SubmitUserMessageUseCase {

@@ -13,10 +13,10 @@ struct HephaestusCLI {
             return
         }
 
-        let harness = MockRuntimeComposition.make(delayNanoseconds: 120_000_000)
-        let runID = await harness.createRun.createRun()
-
         do {
+            let harness = try RuntimeComposition.make(mockDelayNanoseconds: 120_000_000)
+            let runID = await harness.createRun.createRun()
+
             for message in inputMessages {
                 print("> \(message)")
                 let stream = try await harness.streamUserMessage.streamUserMessage(
@@ -31,6 +31,8 @@ struct HephaestusCLI {
                         break
                     case .contextPrepared(_, let count):
                         print("[context: \(count) messages]")
+                    case .providerRequestPrepared(_, _, let model, let messageCount):
+                        print("[provider: \(model), \(messageCount) messages]")
                     case .assistantTextDelta(_, let text):
                         if !didStartAssistant {
                             print("assistant: ", terminator: "")

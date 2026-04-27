@@ -1,41 +1,82 @@
-//
-//  HephaestusUITests.swift
-//  HephaestusUITests
-//
-//  Created by Joshua Sumskas on 14/4/2026.
-//
-
 import XCTest
 
 final class HephaestusUITests: XCTestCase {
-
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testLaunchShowsChatAffordances() throws {
         let app = XCUIApplication()
+        app.launchEnvironment["HEPHAESTUS_PROVIDER"] = "mock"
         app.launch()
+        openWindowIfNeeded(in: app)
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        XCTAssertTrue(app.staticTexts["Hephaestus Chat"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["chat.transcript"].exists)
+        XCTAssertTrue(messageInput(in: app).exists)
+        XCTAssertTrue(app.buttons["chat.sendButton"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["chat.emptyState"].exists)
+    }
+
+    @MainActor
+    func testInspectorDismissesWhenClickingOutside() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["HEPHAESTUS_PROVIDER"] = "mock"
+        app.launch()
+        openWindowIfNeeded(in: app)
+
+        let input = messageInput(in: app)
+        XCTAssertTrue(app.staticTexts["Hephaestus Chat"].waitForExistence(timeout: 5))
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        input.click()
+        input.typeText("manual qa dismissal check")
+        app.buttons["chat.sendButton"].click()
+
+        let inspectorButton = app.buttons["chat.inspector.open"]
+        XCTAssertTrue(inspectorButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForEnabled(inspectorButton, timeout: 5))
+        inspectorButton.click()
+
+        let inspector = app.descendants(matching: .any)["inspector.panel"]
+        XCTAssertTrue(inspector.waitForExistence(timeout: 5))
+
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.02)).click()
+
+        let dismissed = NSPredicate(format: "exists == false")
+        expectation(for: dismissed, evaluatedWith: inspector)
+        waitForExpectations(timeout: 3)
     }
 
     @MainActor
     func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {
             XCUIApplication().launch()
         }
+    }
+
+    private func messageInput(in app: XCUIApplication) -> XCUIElement {
+        let textField = app.textFields["chat.messageInput"]
+        if textField.exists {
+            return textField
+        }
+        let anyElement = app.descendants(matching: .any)["chat.messageInput"]
+        if anyElement.exists {
+            return anyElement
+        }
+        return app.textViews["chat.messageInput"]
+    }
+
+    private func openWindowIfNeeded(in app: XCUIApplication) {
+        if app.staticTexts["Hephaestus Chat"].waitForExistence(timeout: 2) {
+            return
+        }
+        app.typeKey("n", modifierFlags: .command)
+    }
+
+    private func waitForEnabled(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let predicate = NSPredicate(format: "enabled == true")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 }

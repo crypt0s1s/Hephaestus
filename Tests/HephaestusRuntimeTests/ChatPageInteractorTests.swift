@@ -1,0 +1,836 @@
+import Anvil
+import ChatContracts
+import ChatFeature
+import Foundation
+import HephaestusKernel
+import HephaestusRuntime
+import Testing
+
+@Suite
+struct ChatPageInteractorTests {
+    @Test
+    @MainActor
+    func progressiveStreamingBuildsAssistantBubbleThenCompletesIt() async throws {
+        let runID = UUID()
+        let streamUserMessage = ControlledStreamUserMessageUseCase()
+        let interactor = makeInteractor(
+            runID: runID,
+            streamUserMessage: streamUserMessage
+        )
+
+        await interactor.handleAction(.changeDraft("plan the slice"))
+        let sendTask = Task {
+            await interactor.handleAction(.tapSend)
+        }
+
+        await streamUserMessage.waitUntilRequestCount(1)
+        #expect(interactor.state.isRunning)
+        #expect(interactor.state.draftText == "")
+
+        await streamUserMessage.yield(.userMessageAccepted(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 1),
+            messageID: UUID(),
+            text: "plan the slice"
+        ))
+        await waitUntil {
+            interactor.state.messages.count == 1
+        }
+
+        await streamUserMessage.yield(.assistantTextDelta(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 2),
+            "First "
+        ))
+        await waitUntil {
+            interactor.state.messages.last?.text == "First "
+            && interactor.state.messages.last?.isStreaming == true
+        }
+
+        await streamUserMessage.yield(.assistantTextDelta(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 3),
+            "draft"
+        ))
+        await waitUntil {
+            interactor.state.messages.last?.text == "First draft"
+        }
+
+        let completedMessageID = UUID()
+        await streamUserMessage.yield(.assistantMessageCompleted(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 4),
+            messageID: completedMessageID,
+            text: "First draft"
+        ))
+        await streamUserMessage.finish()
+        await sendTask.value
+
+        #expect(interactor.state.messages == [
+            ChatMessageState(
+                id: interactor.state.messages[0].id,
+                role: .user,
+                text: "plan the slice"
+            ),
+            ChatMessageState(
+                id: completedMessageID,
+                role: .assistant,
+                text: "First draft",
+                isStreaming: false
+            )
+        ])
+        #expect(!interactor.state.isRunning)
+        #expect(interactor.state.errorMessage == nil)
+    }
+
+    @Test
+    @MainActor
+    func failedTurnShowsErrorStopsStreamingAndNextSendRecovers() async throws {
+        let runID = UUID()
+        let streamUserMessage = ControlledStreamUserMessageUseCase()
+        let interactor = makeInteractor(
+            runID: runID,
+            streamUserMessage: streamUserMessage
+        )
+
+        await interactor.handleAction(.changeDraft("first"))
+        let failedSend = Task {
+            await interactor.handleAction(.tapSend)
+        }
+
+        await streamUserMessage.waitUntilRequestCount(1)
+        await streamUserMessage.yield(.userMessageAccepted(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 1),
+            messageID: UUID(),
+            text: "first"
+        ))
+        await streamUserMessage.yield(.assistantTextDelta(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 2),
+            "partial"
+        ))
+        await waitUntil {
+            interactor.state.messages.last?.isStreaming == true
+        }
+
+        await streamUserMessage.yield(.turnFailed(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 3),
+            "provider unavailable"
+        ))
+        await streamUserMessage.finish()
+        await failedSend.value
+
+        #expect(interactor.state.errorMessage == "provider unavailable")
+        #expect(!interactor.state.isRunning)
+        #expect(interactor.state.messages.last?.text == "partial")
+        #expect(interactor.state.messages.last?.isStreaming == false)
+
+        await interactor.handleAction(.changeDraft("second"))
+        let recoverySend = Task {
+            await interactor.handleAction(.tapSend)
+        }
+
+        await streamUserMessage.waitUntilRequestCount(2)
+        await streamUserMessage.yield(.userMessageAccepted(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 4),
+            messageID: UUID(),
+            text: "second"
+        ))
+        await streamUserMessage.yield(.assistantMessageCompleted(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 5),
+            messageID: UUID(),
+            text: "recovered"
+        ))
+        await streamUserMessage.finish()
+        await recoverySend.value
+
+        #expect(interactor.state.errorMessage == nil)
+        #expect(!interactor.state.isRunning)
+        #expect(Array(interactor.state.messages.map(\.text).suffix(2)) == ["second", "recovered"])
+    }
+
+    @Test
+    @MainActor
+    func inFlightResponseDoesNotAppendToNewlySelectedChat() async throws {
+        let originalID = UUID()
+        let targetID = UUID()
+        let targetMessage = RunMessage(
+            role: .user,
+            parts: [.text("target question")],
+            source: .localUser,
+            turnID: UUID()
+        )
+        let streamUserMessage = ControlledStreamUserMessageUseCase()
+        let sessions = StubSessionUseCase(
+            sessions: [
+                PersistedSession(id: originalID, title: "Original"),
+                PersistedSession(id: targetID, title: "Target", messages: [targetMessage])
+            ]
+        )
+        let interactor = makeInteractor(
+            runID: originalID,
+            streamUserMessage: streamUserMessage,
+            loadSession: sessions
+        )
+
+        await interactor.handleAction(.changeDraft("slow question"))
+        let sendTask = Task {
+            await interactor.handleAction(.tapSend)
+        }
+
+        await streamUserMessage.waitUntilRequestCount(1)
+        await interactor.handleAction(.tapChat(targetID))
+
+        #expect(interactor.state.runID == targetID)
+        #expect(interactor.state.messages.map(\.text) == ["target question"])
+        #expect(!interactor.state.isRunning)
+
+        let turnID = UUID()
+        await streamUserMessage.yield(.userMessageAccepted(
+            runtimeHeader(runID: originalID, turnID: turnID, sequence: 1),
+            messageID: UUID(),
+            text: "slow question"
+        ))
+        await streamUserMessage.yield(.assistantTextDelta(
+            runtimeHeader(runID: originalID, turnID: turnID, sequence: 2),
+            "wrong chat"
+        ))
+        await streamUserMessage.yield(.assistantMessageCompleted(
+            runtimeHeader(runID: originalID, turnID: turnID, sequence: 3),
+            messageID: UUID(),
+            text: "wrong chat"
+        ))
+        await streamUserMessage.finish()
+        await sendTask.value
+
+        #expect(interactor.state.runID == targetID)
+        #expect(interactor.state.messages.map(\.text) == ["target question"])
+        #expect(interactor.state.errorMessage == nil)
+        #expect(!interactor.state.isRunning)
+    }
+
+    @Test
+    @MainActor
+    func nilInputRunCreatesOnceAndReusesRunForLaterTurns() async throws {
+        let runID = UUID()
+        let createRun = RecordingCreateRunUseCase(runID: runID)
+        let streamUserMessage = ImmediateStreamUserMessageUseCase()
+        let interactor = makeInteractor(
+            runID: nil,
+            createRun: createRun,
+            streamUserMessage: streamUserMessage
+        )
+
+        await interactor.handleAction(.changeDraft("first"))
+        await interactor.handleAction(.tapSend)
+        await interactor.handleAction(.changeDraft("second"))
+        await interactor.handleAction(.tapSend)
+
+        #expect(await createRun.calls() == 1)
+        #expect(interactor.state.runID == runID)
+        #expect(await streamUserMessage.requests() == [
+            ChatInteractorStreamRequest(runID: runID, text: "first"),
+            ChatInteractorStreamRequest(runID: runID, text: "second")
+        ])
+    }
+
+    @Test
+    @MainActor
+    func loadingStateTransitionsAroundControlledStream() async throws {
+        let runID = UUID()
+        let streamUserMessage = ControlledStreamUserMessageUseCase()
+        let interactor = makeInteractor(
+            runID: runID,
+            streamUserMessage: streamUserMessage
+        )
+
+        await interactor.handleAction(.changeDraft("loading"))
+        #expect(!interactor.state.isRunning)
+
+        let sendTask = Task {
+            await interactor.handleAction(.tapSend)
+        }
+
+        await streamUserMessage.waitUntilRequestCount(1)
+        #expect(interactor.state.isRunning)
+        #expect(interactor.state.draftText == "")
+        #expect(interactor.state.errorMessage == nil)
+
+        await streamUserMessage.yield(.assistantMessageCompleted(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 1),
+            messageID: UUID(),
+            text: "done"
+        ))
+        await streamUserMessage.finish()
+        await sendTask.value
+
+        #expect(!interactor.state.isRunning)
+        #expect(interactor.state.messages.last?.text == "done")
+    }
+
+    @Test
+    @MainActor
+    func secondSendWhileRunningDoesNotStartAnotherStream() async throws {
+        let runID = UUID()
+        let streamUserMessage = ControlledStreamUserMessageUseCase()
+        let interactor = makeInteractor(
+            runID: runID,
+            streamUserMessage: streamUserMessage
+        )
+
+        await interactor.handleAction(.changeDraft("first"))
+        let sendTask = Task {
+            await interactor.handleAction(.tapSend)
+        }
+
+        await streamUserMessage.waitUntilRequestCount(1)
+        await interactor.handleAction(.changeDraft("second"))
+        await interactor.handleAction(.tapSend)
+
+        #expect(await streamUserMessage.requests() == [
+            ChatInteractorStreamRequest(runID: runID, text: "first")
+        ])
+        #expect(interactor.state.draftText == "second")
+
+        await streamUserMessage.yield(.assistantMessageCompleted(
+            runtimeHeader(runID: runID, turnID: UUID(), sequence: 1),
+            messageID: UUID(),
+            text: "done"
+        ))
+        await streamUserMessage.finish()
+        await sendTask.value
+
+        #expect(!interactor.state.isRunning)
+    }
+
+    @Test
+    @MainActor
+    func onAppearLoadsPersistedSessionHistory() async throws {
+        let sessionID = UUID()
+        let sessions = StubSessionUseCase(
+            sessions: [
+                PersistedSession(
+                    id: sessionID,
+                    title: "Prior chat",
+                    updatedAt: Date(),
+                    messages: [
+                        RunMessage(role: .user, parts: [.text("hello")], source: .localUser, turnID: UUID())
+                    ]
+                )
+            ]
+        )
+        let interactor = makeInteractor(
+            runID: nil,
+            streamUserMessage: ImmediateStreamUserMessageUseCase(),
+            listSessions: sessions
+        )
+
+        interactor.onAppear()
+        await waitUntil {
+            interactor.state.sessions.count == 1
+        }
+
+        #expect(interactor.state.sessions.first?.id == sessionID)
+        #expect(interactor.state.sessions.first?.title == "Prior chat")
+    }
+
+    @Test
+    @MainActor
+    func openingPersistedSessionRendersMessages() async throws {
+        let sessionID = UUID()
+        let turnID = UUID()
+        let user = RunMessage(role: .user, parts: [.text("saved question")], source: .localUser, turnID: turnID)
+        let assistant = RunMessage(role: .assistant, parts: [.text("saved answer")], source: .provider, turnID: turnID)
+        let sessions = StubSessionUseCase(
+            sessions: [
+                PersistedSession(id: sessionID, title: "Saved", messages: [user, assistant])
+            ]
+        )
+        let interactor = makeInteractor(
+            runID: nil,
+            streamUserMessage: ImmediateStreamUserMessageUseCase(),
+            listSessions: sessions,
+            loadSession: sessions
+        )
+
+        await interactor.handleAction(.tapChat(sessionID))
+
+        #expect(interactor.state.runID == sessionID)
+        #expect(interactor.state.messages.map(\.text) == ["saved question", "saved answer"])
+    }
+
+    @Test
+    @MainActor
+    func openingDifferentSessionDoesNotReloadSidebarList() async throws {
+        let currentID = UUID()
+        let targetID = UUID()
+        let user = RunMessage(role: .user, parts: [.text("target question")], source: .localUser, turnID: UUID())
+        let sessions = StubSessionUseCase(
+            sessions: [
+                PersistedSession(id: currentID, title: "Current"),
+                PersistedSession(id: targetID, title: "Target", messages: [user])
+            ]
+        )
+        let interactor = makeInteractor(
+            runID: currentID,
+            streamUserMessage: ImmediateStreamUserMessageUseCase(),
+            listSessions: sessions,
+            loadSession: sessions
+        )
+
+        await interactor.handleAction(.tapChat(targetID))
+
+        #expect(interactor.state.runID == targetID)
+        #expect(interactor.state.messages.map(\.text) == ["target question"])
+        #expect(!interactor.state.isLoadingSessions)
+        #expect(await sessions.loadedCount() == 1)
+        #expect(await sessions.listedCount() == 0)
+    }
+
+    @Test
+    @MainActor
+    func openingCurrentlySelectedSessionDoesNotReload() async throws {
+        let sessionID = UUID()
+        let sessions = StubSessionUseCase(
+            sessions: [
+                PersistedSession(
+                    id: sessionID,
+                    title: "Selected",
+                    messages: [
+                        RunMessage(role: .user, parts: [.text("original")], source: .localUser, turnID: UUID())
+                    ]
+                )
+            ]
+        )
+        let interactor = makeInteractor(
+            runID: sessionID,
+            streamUserMessage: ImmediateStreamUserMessageUseCase(),
+            listSessions: sessions,
+            loadSession: sessions
+        )
+        await interactor.handleAction(.changeDraft("keep me"))
+
+        await interactor.handleAction(.tapChat(sessionID))
+
+        #expect(await sessions.loadedCount() == 0)
+        #expect(interactor.state.draftText == "keep me")
+        #expect(interactor.state.messages.isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func newChatCreatesPersistedSessionAndClearsTranscript() async throws {
+        let existingID = UUID()
+        let newID = UUID()
+        let sessions = StubSessionUseCase(
+            sessions: [
+                PersistedSession(id: existingID, title: "Existing")
+            ],
+            createdSession: PersistedSession(id: newID, title: "New Chat")
+        )
+        let interactor = makeInteractor(
+            runID: existingID,
+            streamUserMessage: ImmediateStreamUserMessageUseCase(),
+            listSessions: sessions,
+            createSession: sessions
+        )
+        await interactor.handleAction(.changeDraft("stale"))
+
+        await interactor.handleAction(.tapNewChat)
+
+        #expect(interactor.state.runID == newID)
+        #expect(interactor.state.messages.isEmpty)
+        #expect(interactor.state.draftText.isEmpty)
+        #expect(await sessions.createdCount() == 1)
+    }
+
+    @Test
+    @MainActor
+    func providerSettingsValidateSaveAndClearUpdateState() async throws {
+        let settings = StubProviderSettingsUseCase()
+        let interactor = makeInteractor(
+            runID: nil,
+            streamUserMessage: ImmediateStreamUserMessageUseCase(),
+            loadProviderSettings: settings,
+            saveProviderSettings: settings,
+            clearProviderSettings: settings,
+            validateProviderSettings: settings
+        )
+
+        await interactor.handleAction(.tapSettings)
+        await interactor.handleAction(.changeProviderBaseURL("https://example.test/v1"))
+        await interactor.handleAction(.changeProviderAPIKey("secret"))
+        await interactor.handleAction(.changeProviderModel("test-model"))
+        await interactor.handleAction(.validateProviderSettings)
+        #expect(interactor.state.providerSettings.validation == .success("Provider validated."))
+
+        await interactor.handleAction(.saveProviderSettings)
+        #expect(!interactor.state.providerSettings.isPresented)
+        #expect(interactor.state.providerSettings.hasSavedAPIKey)
+        #expect(await settings.savedDraft()?.model == "test-model")
+
+        await interactor.handleAction(.tapSettings)
+        await interactor.handleAction(.clearProviderSettings)
+        #expect(!interactor.state.providerSettings.hasSavedAPIKey)
+        #expect(await settings.wasCleared())
+    }
+
+    @Test
+    @MainActor
+    func inspectorLoadsRunInspectionState() async throws {
+        let sessionID = UUID()
+        let turnID = UUID()
+        let message = RunMessage(role: .user, parts: [.text("inspect me")], source: .localUser, turnID: turnID)
+        let inspection = PersistedRunInspection(session: PersistedSession(
+            id: sessionID,
+            title: "Inspectable",
+            messages: [message],
+            turns: [Turn(id: turnID, runID: sessionID, status: .failed, userMessageID: message.id)],
+            events: [
+                PersistedRuntimeEvent(
+                    id: UUID(),
+                    runID: sessionID,
+                    turnID: turnID,
+                    sequence: 1,
+                    createdAt: Date(),
+                    kind: .turnFailed,
+                    summary: "Turn failed",
+                    error: "network down"
+                )
+            ],
+            contextTraces: [
+                PersistedContextTrace(
+                    runID: sessionID,
+                    turnID: turnID,
+                    policyID: "recent",
+                    policyName: "Recent messages",
+                    messageLimit: 20,
+                    includedMessageIDs: [message.id],
+                    excludedMessageIDs: [],
+                    createdAt: Date()
+                )
+            ]
+        ))
+        let inspector = StubInspectRunUseCase(inspection: inspection)
+        let interactor = makeInteractor(
+            runID: sessionID,
+            streamUserMessage: ImmediateStreamUserMessageUseCase(),
+            inspectRun: inspector
+        )
+
+        await interactor.handleAction(.tapInspector)
+
+        #expect(interactor.state.inspector.isPresented)
+        #expect(!interactor.state.inspector.isLoading)
+        #expect(interactor.state.inspector.inspection?.orderedEvents.first?.error == "network down")
+        #expect(interactor.state.inspector.inspection?.session.contextTraces.first?.messageLimit == 20)
+    }
+
+    @Test
+    @MainActor
+    func persistenceErrorIsSurfacedWhenHistoryLoadFails() async throws {
+        let sessions = FailingListSessionsUseCase()
+        let interactor = makeInteractor(
+            runID: nil,
+            streamUserMessage: ImmediateStreamUserMessageUseCase(),
+            listSessions: sessions
+        )
+
+        interactor.onAppear()
+        await waitUntil {
+            interactor.state.persistenceErrorMessage != nil
+        }
+
+        #expect(interactor.state.persistenceErrorMessage?.contains("boom") == true)
+    }
+}
+
+@MainActor
+private func makeInteractor(
+    runID: UUID?,
+    createRun: CreateRunUseCase = RecordingCreateRunUseCase(runID: UUID()),
+    streamUserMessage: StreamUserMessageUseCase,
+    loadProviderSettings: LoadProviderSettingsUseCase? = nil,
+    saveProviderSettings: SaveProviderSettingsUseCase? = nil,
+    clearProviderSettings: ClearProviderSettingsUseCase? = nil,
+    validateProviderSettings: ValidateProviderSettingsUseCase? = nil,
+    listSessions: ListSessionsUseCase? = nil,
+    loadSession: LoadSessionUseCase? = nil,
+    createSession: CreateSessionUseCase? = nil,
+    inspectRun: InspectRunUseCase? = nil
+) -> ChatPageInteractor {
+    ChatPageInteractor(
+        input: ChatRouteInput(runID: runID),
+        createRun: createRun,
+        streamUserMessage: streamUserMessage,
+        loadProviderSettings: loadProviderSettings,
+        saveProviderSettings: saveProviderSettings,
+        clearProviderSettings: clearProviderSettings,
+        validateProviderSettings: validateProviderSettings,
+        listSessions: listSessions,
+        loadSession: loadSession,
+        createSession: createSession,
+        inspectRun: inspectRun,
+        router: Router<AnyRouteInput, AnyModalInput>()
+    )
+}
+
+private func runtimeHeader(
+    runID: UUID,
+    turnID: UUID?,
+    sequence: Int
+) -> RuntimeEventHeader {
+    RuntimeEventHeader(
+        id: UUID(),
+        runID: runID,
+        turnID: turnID,
+        sequence: sequence,
+        createdAt: Date()
+    )
+}
+
+@MainActor
+private func waitUntil(
+    _ predicate: @escaping @MainActor () -> Bool,
+    sourceLocation: SourceLocation = #_sourceLocation
+) async {
+    for _ in 0..<100 {
+        if predicate() {
+            return
+        }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+    }
+    Issue.record("Timed out waiting for state transition", sourceLocation: sourceLocation)
+}
+
+private struct ChatInteractorStreamRequest: Equatable, Sendable {
+    let runID: UUID
+    let text: String
+}
+
+private actor RecordingCreateRunUseCase: CreateRunUseCase {
+    private let runID: UUID
+    private var callCount = 0
+
+    init(runID: UUID) {
+        self.runID = runID
+    }
+
+    func createRun() async -> UUID {
+        callCount += 1
+        return runID
+    }
+
+    func calls() -> Int {
+        callCount
+    }
+}
+
+private actor ImmediateStreamUserMessageUseCase: StreamUserMessageUseCase {
+    private var recordedRequests: [ChatInteractorStreamRequest] = []
+
+    func streamUserMessage(
+        runID: UUID,
+        text: String
+    ) async throws -> AsyncThrowingStream<RuntimeEvent, Error> {
+        recordedRequests.append(ChatInteractorStreamRequest(runID: runID, text: text))
+
+        return AsyncThrowingStream { continuation in
+            let turnID = UUID()
+            continuation.yield(.userMessageAccepted(
+                runtimeHeader(runID: runID, turnID: turnID, sequence: 1),
+                messageID: UUID(),
+                text: text
+            ))
+            continuation.yield(.assistantMessageCompleted(
+                runtimeHeader(runID: runID, turnID: turnID, sequence: 2),
+                messageID: UUID(),
+                text: "done \(text)"
+            ))
+            continuation.finish()
+        }
+    }
+
+    func requests() -> [ChatInteractorStreamRequest] {
+        recordedRequests
+    }
+}
+
+private actor ControlledStreamUserMessageUseCase: StreamUserMessageUseCase {
+    private typealias Continuation = AsyncThrowingStream<RuntimeEvent, Error>.Continuation
+
+    private var recordedRequests: [ChatInteractorStreamRequest] = []
+    private var continuation: Continuation?
+    private var requestWaiters: [CheckedContinuation<Void, Never>] = []
+    private var streamWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func streamUserMessage(
+        runID: UUID,
+        text: String
+    ) async throws -> AsyncThrowingStream<RuntimeEvent, Error> {
+        recordedRequests.append(ChatInteractorStreamRequest(runID: runID, text: text))
+        resumeRequestWaiters()
+
+        return AsyncThrowingStream { continuation in
+            Task {
+                self.setContinuation(continuation)
+            }
+        }
+    }
+
+    func yield(_ event: RuntimeEvent) {
+        continuation?.yield(event)
+    }
+
+    func finish() {
+        continuation?.finish()
+        continuation = nil
+    }
+
+    func waitUntilRequestCount(_ expectedCount: Int) async {
+        if recordedRequests.count < expectedCount {
+            await withCheckedContinuation { waiter in
+                requestWaiters.append(waiter)
+            }
+        }
+
+        if continuation == nil {
+            await withCheckedContinuation { waiter in
+                streamWaiters.append(waiter)
+            }
+        }
+    }
+
+    func requests() -> [ChatInteractorStreamRequest] {
+        recordedRequests
+    }
+
+    private func setContinuation(_ continuation: Continuation) {
+        self.continuation = continuation
+        let waiters = streamWaiters
+        streamWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    private func resumeRequestWaiters() {
+        let waiters = requestWaiters
+        requestWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+}
+
+private actor StubSessionUseCase: ListSessionsUseCase, LoadSessionUseCase, CreateSessionUseCase {
+    private var sessions: [PersistedSession]
+    private let createdSession: PersistedSession
+    private var createCalls = 0
+    private var loadCalls = 0
+    private var listCalls = 0
+
+    init(
+        sessions: [PersistedSession],
+        createdSession: PersistedSession = PersistedSession(title: "New Chat")
+    ) {
+        self.sessions = sessions
+        self.createdSession = createdSession
+    }
+
+    func listSessions() async throws -> [PersistedSessionSummary] {
+        listCalls += 1
+        return sessions.map(\.summary)
+    }
+
+    func loadSession(id: UUID) async throws -> PersistedSession {
+        loadCalls += 1
+        guard let session = sessions.first(where: { $0.id == id }) else {
+            throw AppStateStoreFailure.sessionNotFound(id)
+        }
+        return session
+    }
+
+    func createSession(title: String?) async throws -> PersistedSession {
+        createCalls += 1
+        sessions.append(createdSession)
+        return createdSession
+    }
+
+    func createdCount() -> Int {
+        createCalls
+    }
+
+    func loadedCount() -> Int {
+        loadCalls
+    }
+
+    func listedCount() -> Int {
+        listCalls
+    }
+}
+
+private actor StubProviderSettingsUseCase:
+    LoadProviderSettingsUseCase,
+    SaveProviderSettingsUseCase,
+    ClearProviderSettingsUseCase,
+    ValidateProviderSettingsUseCase
+{
+    private var summary: ProviderSettingsSummary?
+    private var saved: ProviderSettingsDraft?
+    private var cleared = false
+    var validationResult: ProviderSettingsValidationResult = .success
+
+    func loadProviderSettings() async throws -> ProviderSettingsSummary? {
+        summary
+    }
+
+    func saveProviderSettings(_ draft: ProviderSettingsDraft, validatedAt: Date?) async throws {
+        saved = draft
+        summary = ProviderSettingsSummary(
+            baseURLString: draft.baseURLString,
+            model: draft.model,
+            hasSavedAPIKey: draft.apiKey?.isEmpty == false,
+            validatedAt: validatedAt
+        )
+    }
+
+    func clearProviderSettings() async throws {
+        summary = nil
+        saved = nil
+        cleared = true
+    }
+
+    func validateProviderSettings(_ draft: ProviderSettingsDraft) async -> ProviderSettingsValidationResult {
+        validationResult
+    }
+
+    func savedDraft() -> ProviderSettingsDraft? {
+        saved
+    }
+
+    func wasCleared() -> Bool {
+        cleared
+    }
+}
+
+private actor StubInspectRunUseCase: InspectRunUseCase {
+    private let inspection: PersistedRunInspection
+
+    init(inspection: PersistedRunInspection) {
+        self.inspection = inspection
+    }
+
+    func inspectRun(sessionID: UUID) async throws -> PersistedRunInspection {
+        inspection
+    }
+}
+
+private struct FailingListSessionsUseCase: ListSessionsUseCase {
+    func listSessions() async throws -> [PersistedSessionSummary] {
+        throw StubFailure.boom
+    }
+}
+
+private enum StubFailure: Error, CustomStringConvertible {
+    case boom
+
+    var description: String {
+        "boom"
+    }
+}

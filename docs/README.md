@@ -7,7 +7,17 @@ This folder captures the current direction for Hephaestus as an agent system.
 - [Vision](./vision.md): the intended end state for the product and runtime.
 - [Roadmap](./roadmap.md): the staged plan from kernel proof of concept to multi-agent workflows.
 - [Next Step](./next-step.md): the immediate implementation target for the first kernel milestone.
+- [PRDs](./prd/README.md): product requirements that define user-facing capabilities, scope, acceptance criteria, and milestones.
+- [Workflows](./workflows/README.md): repeatable collaboration processes for implementing and reviewing changes.
 - [ADR Template](./adr/template.md): template for recording architecture decisions as they are made.
+- [Chat Log Runtime Architecture Map](./plans/0005-chat-log-runtime-architecture-map.md): current-state data flow map for chat logs, streaming, persistence, and UI projection.
+- [Chat Session Service Refactor Plan](./plans/0006-chat-session-service-refactor-plan.md): draft refactor sequence for moving long-lived chat IO out of page interactors.
+
+## Documentation Routing
+
+- Use a PRD when defining the product outcome, user value, scope, and acceptance criteria.
+- Use an ADR when recording a durable architecture decision and its tradeoffs.
+- Use a plan when describing how an accepted slice will be implemented and validated.
 
 ## ADRs
 
@@ -17,6 +27,8 @@ This folder captures the current direction for Hephaestus as an agent system.
 - [0004. SwiftUI Interactor Page Architecture](./adr/0004-swiftui-interactor-page-architecture.md): defines state/action page views, interactors, lifecycle binding, and the `Page(interactor:view:)` convention.
 - [0005. SwiftUI Router And Modal Navigation](./adr/0005-swiftui-router-and-modal-navigation.md): defines route stack ownership, semantic modal presentation, and shell-level navigation rendering.
 - [0006. Package Boundaries And Cross-Package Deep Links](./adr/0006-package-boundaries-and-cross-package-deep-links.md): defines local package boundaries and route-input based deep links across packages.
+- [0007. Headless Runtime Entrypoint](./adr/0007-headless-runtime-entrypoint.md): defines headless support so the runtime can be exercised from a CLI or tests without requiring the SwiftUI app.
+- [0008. Local App State Storage](./adr/0008-local-app-state-storage.md): defines the first durable storage boundary for provider settings, chat history, context traces, and run inspection summaries.
 
 ## Current Direction
 

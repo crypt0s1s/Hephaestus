@@ -139,6 +139,90 @@ struct RuntimeStreamingTests {
         }
     }
 
+    @Test
+    @MainActor
+    func tapSendMarksRunningBeforeAwaitingRunCreation() async throws {
+        let runID = UUID()
+        let createRun = BlockingCreateRunUseCase(runID: runID)
+        let streamUserMessage = RecordingStreamUserMessageUseCase()
+        let interactor = ChatPageInteractor(
+            input: ChatRouteInput(runID: nil),
+            createRun: createRun,
+            streamUserMessage: streamUserMessage,
+            router: Router<AnyRouteInput, AnyModalInput>()
+        )
+
+        await interactor.handleAction(.changeDraft("first"))
+
+        let sendTask = Task {
+            await interactor.handleAction(.tapSend)
+        }
+
+        await createRun.waitUntilCallCount(1)
+
+        #expect(interactor.state.isRunning)
+        #expect(interactor.state.draftText == "")
+        #expect(interactor.state.errorMessage == nil)
+
+        await createRun.releaseAll()
+        await sendTask.value
+
+        #expect(await streamUserMessage.requests() == [StreamRequest(runID: runID, text: "first")])
+    }
+
+    @Test
+    @MainActor
+    func tapSendIgnoresEmptyDraft() async throws {
+        let createRun = BlockingCreateRunUseCase(runID: UUID())
+        let streamUserMessage = RecordingStreamUserMessageUseCase()
+        let interactor = ChatPageInteractor(
+            input: ChatRouteInput(runID: nil),
+            createRun: createRun,
+            streamUserMessage: streamUserMessage,
+            router: Router<AnyRouteInput, AnyModalInput>()
+        )
+
+        await interactor.handleAction(.changeDraft(" \n "))
+        await interactor.handleAction(.tapSend)
+
+        #expect(!interactor.state.isRunning)
+        #expect(interactor.state.draftText == " \n ")
+        #expect(await createRun.calls() == 0)
+        #expect(await streamUserMessage.requests().isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func tapSendIgnoresSecondSubmitWhileRunning() async throws {
+        let runID = UUID()
+        let createRun = BlockingCreateRunUseCase(runID: runID)
+        let streamUserMessage = RecordingStreamUserMessageUseCase()
+        let interactor = ChatPageInteractor(
+            input: ChatRouteInput(runID: nil),
+            createRun: createRun,
+            streamUserMessage: streamUserMessage,
+            router: Router<AnyRouteInput, AnyModalInput>()
+        )
+
+        await interactor.handleAction(.changeDraft("first"))
+
+        let sendTask = Task {
+            await interactor.handleAction(.tapSend)
+        }
+
+        await createRun.waitUntilCallCount(1)
+        await interactor.handleAction(.changeDraft("second"))
+        await interactor.handleAction(.tapSend)
+
+        #expect(await createRun.calls() == 1)
+        #expect(await streamUserMessage.requests().isEmpty)
+
+        await createRun.releaseAll()
+        await sendTask.value
+
+        #expect(await streamUserMessage.requests() == [StreamRequest(runID: runID, text: "first")])
+    }
+
     private func collect(
         _ stream: AsyncThrowingStream<RuntimeEvent, Error>
     ) async throws -> [RuntimeEvent] {
@@ -170,6 +254,87 @@ struct RuntimeStreamingTests {
             }
         }
         return events
+    }
+}
+
+private struct StreamRequest: Equatable, Sendable {
+    let runID: UUID
+    let text: String
+}
+
+private actor BlockingCreateRunUseCase: CreateRunUseCase {
+    private let runID: UUID
+    private var callCount = 0
+    private var callWaiters: [CheckedContinuation<Void, Never>] = []
+    private var continuations: [CheckedContinuation<UUID, Never>] = []
+
+    init(runID: UUID) {
+        self.runID = runID
+    }
+
+    func createRun() async -> UUID {
+        callCount += 1
+        let waiters = callWaiters
+        callWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+
+        return await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
+
+    func waitUntilCallCount(_ expectedCallCount: Int) async {
+        if callCount >= expectedCallCount {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            callWaiters.append(continuation)
+        }
+    }
+
+    func calls() -> Int {
+        callCount
+    }
+
+    func releaseAll() {
+        let pendingContinuations = continuations
+        continuations.removeAll()
+        for continuation in pendingContinuations {
+            continuation.resume(returning: runID)
+        }
+    }
+}
+
+private actor RecordingStreamUserMessageUseCase: StreamUserMessageUseCase {
+    private var recordedRequests: [StreamRequest] = []
+
+    func streamUserMessage(
+        runID: UUID,
+        text: String
+    ) async throws -> AsyncThrowingStream<RuntimeEvent, Error> {
+        recordedRequests.append(StreamRequest(runID: runID, text: text))
+
+        return AsyncThrowingStream { continuation in
+            let turnID = UUID()
+            continuation.yield(.userMessageAccepted(
+                RuntimeEventHeader(id: UUID(), runID: runID, turnID: turnID, sequence: 1, createdAt: Date()),
+                messageID: UUID(),
+                text: text
+            ))
+            continuation.yield(.assistantMessageCompleted(
+                RuntimeEventHeader(id: UUID(), runID: runID, turnID: turnID, sequence: 2, createdAt: Date()),
+                messageID: UUID(),
+                text: "done"
+            ))
+            continuation.finish()
+        }
+    }
+
+    func requests() -> [StreamRequest] {
+        recordedRequests
     }
 }
 

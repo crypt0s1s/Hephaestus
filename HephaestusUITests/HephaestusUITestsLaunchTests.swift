@@ -1,10 +1,3 @@
-//
-//  HephaestusUITestsLaunchTests.swift
-//  HephaestusUITests
-//
-//  Created by Joshua Sumskas on 14/4/2026.
-//
-
 import XCTest
 
 final class HephaestusUITestsLaunchTests: XCTestCase {
@@ -20,14 +13,22 @@ final class HephaestusUITestsLaunchTests: XCTestCase {
     @MainActor
     func testLaunch() throws {
         let app = XCUIApplication()
+        app.launchEnvironment["HEPHAESTUS_PROVIDER"] = "mock"
         app.launch()
+        openWindowIfNeeded(in: app)
 
-        // Insert steps here to perform after app launch but before taking a screenshot,
-        // such as logging into a test account or navigating somewhere in the app
+        XCTAssertTrue(app.staticTexts["Hephaestus Chat"].waitForExistence(timeout: 5))
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Launch Screen"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    private func openWindowIfNeeded(in app: XCUIApplication) {
+        if app.staticTexts["Hephaestus Chat"].waitForExistence(timeout: 2) {
+            return
+        }
+        app.typeKey("n", modifierFlags: .command)
     }
 }

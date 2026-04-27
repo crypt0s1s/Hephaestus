@@ -7,6 +7,17 @@
 
 ---
 
+## Writing Guidance
+
+- Record a durable architecture decision, not a product requirement or implementation checklist.
+- Include meaningful alternatives and the tradeoffs that led to the decision.
+- Make consequences explicit so future work understands the cost of the decision.
+- Keep the ADR future-facing: what should remain true after this decision?
+- If the question is what user/product outcome we want, write a PRD.
+- If the question is how to implement a specific accepted slice, write a plan in `docs/plans/`.
+
+---
+
 ## Context
 
 [Describe the issue or problem that motivates this decision. Include relevant technical, business, and organizational context. What are the forces at play?]
