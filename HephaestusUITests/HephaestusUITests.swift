@@ -6,17 +6,17 @@ final class HephaestusUITests: XCTestCase {
     }
 
     @MainActor
-    func testLaunchShowsChatAffordances() throws {
+    func testLaunchShowsTaskWorkspaceAffordances() throws {
         let app = XCUIApplication()
         app.launchEnvironment["HEPHAESTUS_PROVIDER"] = "mock"
         app.launch()
         openWindowIfNeeded(in: app)
 
-        XCTAssertTrue(app.staticTexts["Hephaestus Chat"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.scrollViews["chat.transcript"].exists)
+        XCTAssertTrue(app.staticTexts["Task Workspace"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["conversation.transcript"].exists)
         XCTAssertTrue(messageInput(in: app).exists)
-        XCTAssertTrue(app.buttons["chat.sendButton"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["chat.emptyState"].exists)
+        XCTAssertTrue(app.buttons["conversation.sendButton"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["task.emptyState"].exists)
     }
 
     @MainActor
@@ -27,13 +27,13 @@ final class HephaestusUITests: XCTestCase {
         openWindowIfNeeded(in: app)
 
         let input = messageInput(in: app)
-        XCTAssertTrue(app.staticTexts["Hephaestus Chat"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Task Workspace"].waitForExistence(timeout: 5))
         XCTAssertTrue(input.waitForExistence(timeout: 5))
         input.click()
         input.typeText("manual qa dismissal check")
-        app.buttons["chat.sendButton"].click()
+        app.buttons["conversation.sendButton"].click()
 
-        let inspectorButton = app.buttons["chat.inspector.open"]
+        let inspectorButton = app.buttons["task.inspector.open"]
         XCTAssertTrue(inspectorButton.waitForExistence(timeout: 5))
         XCTAssertTrue(waitForEnabled(inspectorButton, timeout: 5))
         inspectorButton.click()
@@ -56,19 +56,19 @@ final class HephaestusUITests: XCTestCase {
     }
 
     private func messageInput(in app: XCUIApplication) -> XCUIElement {
-        let textField = app.textFields["chat.messageInput"]
+        let textField = app.textFields["conversation.messageInput"]
         if textField.exists {
             return textField
         }
-        let anyElement = app.descendants(matching: .any)["chat.messageInput"]
+        let anyElement = app.descendants(matching: .any)["conversation.messageInput"]
         if anyElement.exists {
             return anyElement
         }
-        return app.textViews["chat.messageInput"]
+        return app.textViews["conversation.messageInput"]
     }
 
     private func openWindowIfNeeded(in app: XCUIApplication) {
-        if app.staticTexts["Hephaestus Chat"].waitForExistence(timeout: 2) {
+        if app.staticTexts["Task Workspace"].waitForExistence(timeout: 2) {
             return
         }
         app.typeKey("n", modifierFlags: .command)

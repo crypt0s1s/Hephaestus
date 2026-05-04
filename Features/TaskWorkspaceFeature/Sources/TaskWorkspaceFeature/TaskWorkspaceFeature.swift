@@ -1,11 +1,13 @@
 import Anvil
-import ChatContracts
 import Foundation
+import HephaestusDomain
 import HephaestusKernel
+import HephaestusObservation
 import HephaestusRuntime
 import SwiftUI
+import TaskWorkspaceContracts
 
-public struct ChatMessageState: Equatable, Identifiable, Sendable {
+public struct ConversationMessageState: Equatable, Identifiable, Sendable {
     public enum Role: Equatable, Sendable {
         case user
         case assistant
@@ -24,7 +26,7 @@ public struct ChatMessageState: Equatable, Identifiable, Sendable {
     }
 }
 
-public struct ChatPageError: Error, Equatable, Sendable, CustomStringConvertible {
+public struct TaskWorkspaceError: Error, Equatable, Sendable, CustomStringConvertible {
     public let description: String
 
     public init(_ description: String) {
@@ -36,27 +38,27 @@ public struct ChatPageError: Error, Equatable, Sendable, CustomStringConvertible
     }
 }
 
-public struct ChatPageState: Equatable {
-    public var workspaceSnapshot: ChatWorkspaceSnapshot?
+public struct TaskWorkspaceState: Equatable {
+    public var workspaceSnapshot: TaskWorkspaceSnapshot?
     public var runID: UUID?
-    public var selectedSnapshot: ChatSessionSnapshot?
-    public var messages: [ChatMessageState]
+    public var selectedSnapshot: TaskSessionSnapshot?
+    public var messages: [ConversationMessageState]
     public var draftText: String
     public var isRunning: Bool
     public var errorMessage: String?
-    public var sessions: StoreState<[ChatSessionSummaryState], ChatPageError>
+    public var sessions: StoreState<[TaskSummaryState], TaskWorkspaceError>
     public var providerSettings: ProviderSettingsPanelState
     public var inspector: RunInspectorPanelState
 
     public init(
-        workspaceSnapshot: ChatWorkspaceSnapshot? = nil,
+        workspaceSnapshot: TaskWorkspaceSnapshot? = nil,
         runID: UUID? = nil,
-        selectedSnapshot: ChatSessionSnapshot? = nil,
-        messages: [ChatMessageState] = [],
+        selectedSnapshot: TaskSessionSnapshot? = nil,
+        messages: [ConversationMessageState] = [],
         draftText: String = "",
         isRunning: Bool = false,
         errorMessage: String? = nil,
-        sessions: [ChatSessionSummaryState] = [],
+        sessions: [TaskSummaryState] = [],
         isLoadingSessions: Bool = false,
         persistenceErrorMessage: String? = nil,
         providerSettings: ProviderSettingsPanelState = ProviderSettingsPanelState(),
@@ -70,7 +72,7 @@ public struct ChatPageState: Equatable {
         self.isRunning = isRunning
         self.errorMessage = errorMessage
         if let persistenceErrorMessage {
-            self.sessions = .error(ChatPageError(persistenceErrorMessage))
+            self.sessions = .error(TaskWorkspaceError(persistenceErrorMessage))
         } else if isLoadingSessions {
             self.sessions = .loading(placeholder: sessions)
         } else {
@@ -80,7 +82,7 @@ public struct ChatPageState: Equatable {
         self.inspector = inspector
     }
 
-    public var sessionSummaries: [ChatSessionSummaryState] {
+    public var sessionSummaries: [TaskSummaryState] {
         sessions.data ?? []
     }
 
@@ -93,11 +95,11 @@ public struct ChatPageState: Equatable {
     }
 }
 
-public enum ChatPageAction: Equatable {
+public enum TaskWorkspaceAction: Equatable {
     case changeDraft(String)
     case tapSend
-    case tapNewChat
-    case tapChat(UUID)
+    case tapNewTask
+    case tapTask(UUID)
     case tapCancel
     case tapSettings
     case dismissSettings
@@ -111,17 +113,33 @@ public enum ChatPageAction: Equatable {
     case dismissInspector
 }
 
-public struct ChatSessionSummaryState: Equatable, Identifiable, Sendable {
+public struct TaskSummaryState: Equatable, Identifiable, Sendable {
     public let id: UUID
     public var title: String
     public var updatedAt: Date
     public var messageCount: Int
+    public var task: AgentTask
 
-    public init(id: UUID, title: String, updatedAt: Date, messageCount: Int) {
+    public init(
+        id: UUID,
+        title: String,
+        updatedAt: Date,
+        messageCount: Int,
+        task: AgentTask? = nil
+    ) {
         self.id = id
         self.title = title
         self.updatedAt = updatedAt
         self.messageCount = messageCount
+        self.task = task ?? AgentTask(
+            id: TaskID(rawValue: id),
+            projectID: DefaultProject.id,
+            title: title,
+            status: messageCount == 0 ? .draft : .completed,
+            createdAt: updatedAt,
+            updatedAt: updatedAt,
+            activeRunID: id
+        )
     }
 }
 
@@ -168,17 +186,17 @@ public struct ProviderSettingsPanelState: Equatable {
 
 public struct RunInspectorPanelState: Equatable {
     public var isPresented: Bool
-    public var loadState: StoreState<PersistedRunInspection?, ChatPageError>
+    public var loadState: StoreState<RunInspectionSnapshot?, TaskWorkspaceError>
 
     public init(
         isPresented: Bool = false,
         isLoading: Bool = false,
-        inspection: PersistedRunInspection? = nil,
+        inspection: RunInspectionSnapshot? = nil,
         errorMessage: String? = nil
     ) {
         self.isPresented = isPresented
         if let errorMessage {
-            loadState = .error(ChatPageError(errorMessage))
+            loadState = .error(TaskWorkspaceError(errorMessage))
         } else if isLoading {
             loadState = .loading(placeholder: inspection)
         } else {
@@ -190,7 +208,7 @@ public struct RunInspectorPanelState: Equatable {
         loadState.isLoading
     }
 
-    public var inspection: PersistedRunInspection? {
+    public var inspection: RunInspectionSnapshot? {
         switch loadState {
         case .loading(let placeholder):
             return placeholder ?? nil
@@ -206,18 +224,19 @@ public struct RunInspectorPanelState: Equatable {
     }
 }
 
-extension ChatSessionSummaryState {
+extension TaskSummaryState {
     init(summary: PersistedSessionSummary) {
         self.init(
             id: summary.id,
             title: summary.title,
             updatedAt: summary.updatedAt,
-            messageCount: summary.messageCount
+            messageCount: summary.messageCount,
+            task: AgentTask(sessionSummary: summary)
         )
     }
 }
 
-extension ChatMessageState {
+extension ConversationMessageState {
     init?(message: RunMessage) {
         switch message.role {
         case .user:
@@ -236,25 +255,25 @@ private extension String {
     }
 }
 
-private enum ChatScrollTarget {
-    static let bottom = "chat-scroll-bottom"
-    static let coordinateSpace = "chat-scroll-coordinate-space"
+private enum ConversationScrollTarget {
+    static let bottom = "conversation-scroll-bottom"
+    static let coordinateSpace = "conversation-scroll-coordinate-space"
     static let pinnedThreshold: CGFloat = 44
 }
 
-private enum ChatAccessibilityID {
-    static let historyList = "chat.history.list"
-    static let historyEmptyState = "chat.history.emptyState"
-    static let newChatButton = "chat.history.newChat"
-    static let settingsButton = "chat.provider.settings"
-    static let inspectorButton = "chat.inspector.open"
-    static let transcript = "chat.transcript"
-    static let emptyState = "chat.emptyState"
-    static let messageInput = "chat.messageInput"
-    static let sendButton = "chat.sendButton"
-    static let runningStatus = "chat.runningStatus"
-    static let errorBanner = "chat.errorBanner"
-    static let persistenceError = "chat.persistence.error"
+private enum TaskWorkspaceAccessibilityID {
+    static let historyList = "task.list"
+    static let historyEmptyState = "task.list.emptyState"
+    static let newTaskButton = "task.new"
+    static let settingsButton = "task.provider.settings"
+    static let inspectorButton = "task.inspector.open"
+    static let transcript = "conversation.transcript"
+    static let emptyState = "task.emptyState"
+    static let messageInput = "conversation.messageInput"
+    static let sendButton = "conversation.sendButton"
+    static let runningStatus = "task.runningStatus"
+    static let errorBanner = "task.errorBanner"
+    static let persistenceError = "task.persistence.error"
     static let providerBaseURL = "provider.baseURL"
     static let providerAPIKey = "provider.apiKey"
     static let providerModel = "provider.model"
@@ -265,9 +284,9 @@ private enum ChatAccessibilityID {
     static let inspectorTimeline = "inspector.timeline"
 }
 
-public struct ChatPage: View {
-    public let state: ChatPageState
-    public let handle: (ChatPageAction) -> Void
+public struct TaskWorkspacePage: View {
+    public let state: TaskWorkspaceState
+    public let handle: (TaskWorkspaceAction) -> Void
     @State private var isTranscriptPinnedToBottom = true
 
     private var trimmedDraft: String {
@@ -278,7 +297,7 @@ public struct ChatPage: View {
         !state.isRunning && !trimmedDraft.isEmpty
     }
 
-    public init(state: ChatPageState, handle: @escaping (ChatPageAction) -> Void) {
+    public init(state: TaskWorkspaceState, handle: @escaping (TaskWorkspaceAction) -> Void) {
         self.state = state
         self.handle = handle
     }
@@ -297,7 +316,7 @@ public struct ChatPage: View {
             Divider()
 
             VStack(spacing: 0) {
-                ChatHeader(
+                TaskHeader(
                     isRunning: state.isRunning,
                     runID: state.runID,
                     canInspect: state.runID != nil,
@@ -351,7 +370,7 @@ public struct ChatPage: View {
                 ScrollView {
                     LazyVStack(spacing: 14) {
                         if state.messages.isEmpty {
-                            EmptyChatState()
+                            EmptyTaskState()
                                 .padding(.top, 68)
                         } else {
                             ForEach(state.messages) { message in
@@ -365,12 +384,12 @@ public struct ChatPage: View {
 
                         Color.clear
                             .frame(height: 1)
-                            .id(ChatScrollTarget.bottom)
+                            .id(ConversationScrollTarget.bottom)
                             .background {
                                 GeometryReader { bottomMarker in
                                     Color.clear.preference(
-                                        key: ChatBottomDistancePreferenceKey.self,
-                                        value: bottomMarker.frame(in: .named(ChatScrollTarget.coordinateSpace)).maxY
+                                        key: ConversationBottomDistancePreferenceKey.self,
+                                        value: bottomMarker.frame(in: .named(ConversationScrollTarget.coordinateSpace)).maxY
                                             - viewport.size.height
                                     )
                                 }
@@ -379,11 +398,11 @@ public struct ChatPage: View {
                     .padding(.horizontal, 22)
                     .padding(.vertical, 20)
                 }
-                .coordinateSpace(name: ChatScrollTarget.coordinateSpace)
-                .accessibilityLabel("Chat transcript")
-                .accessibilityIdentifier(ChatAccessibilityID.transcript)
-                .onPreferenceChange(ChatBottomDistancePreferenceKey.self) { distanceFromBottom in
-                    isTranscriptPinnedToBottom = distanceFromBottom <= ChatScrollTarget.pinnedThreshold
+                .coordinateSpace(name: ConversationScrollTarget.coordinateSpace)
+                .accessibilityLabel("Conversation transcript")
+                .accessibilityIdentifier(TaskWorkspaceAccessibilityID.transcript)
+                .onPreferenceChange(ConversationBottomDistancePreferenceKey.self) { distanceFromBottom in
+                    isTranscriptPinnedToBottom = distanceFromBottom <= ConversationScrollTarget.pinnedThreshold
                 }
                 .onChange(of: state.messages, initial: true) {
                     scrollToBottomIfPinned(proxy)
@@ -397,12 +416,12 @@ public struct ChatPage: View {
 
     private func scrollToBottomIfPinned(_ proxy: ScrollViewProxy) {
         guard isTranscriptPinnedToBottom else { return }
-        proxy.scrollTo(ChatScrollTarget.bottom, anchor: .bottom)
+        proxy.scrollTo(ConversationScrollTarget.bottom, anchor: .bottom)
     }
 
     private var composer: some View {
         HStack(alignment: .center, spacing: 10) {
-            TextField("Ask Hephaestus", text: Binding(
+            TextField("Add task instruction", text: Binding(
                 get: { state.draftText },
                 set: { handle(.changeDraft($0)) }
             ), axis: .vertical)
@@ -420,7 +439,7 @@ public struct ChatPage: View {
                 handle(.tapSend)
             }
             .accessibilityLabel("Message")
-            .accessibilityIdentifier(ChatAccessibilityID.messageInput)
+            .accessibilityIdentifier(TaskWorkspaceAccessibilityID.messageInput)
 
             Button {
                 handle(.tapSend)
@@ -434,12 +453,12 @@ public struct ChatPage: View {
             .disabled(!canSend)
             .help("Send message")
             .accessibilityLabel("Send message")
-            .accessibilityIdentifier(ChatAccessibilityID.sendButton)
+            .accessibilityIdentifier(TaskWorkspaceAccessibilityID.sendButton)
         }
     }
 }
 
-private struct ChatBottomDistancePreferenceKey: PreferenceKey {
+private struct ConversationBottomDistancePreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -448,33 +467,33 @@ private struct ChatBottomDistancePreferenceKey: PreferenceKey {
 }
 
 private struct HistorySidebar: View {
-    let sessions: [ChatSessionSummaryState]
+    let sessions: [TaskSummaryState]
     let selectedRunID: UUID?
     let isLoading: Bool
     let errorMessage: String?
-    let handle: (ChatPageAction) -> Void
+    let handle: (TaskWorkspaceAction) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Chats")
+                Text("Tasks")
                     .font(.headline)
                 Spacer()
                 Button {
-                    handle(.tapNewChat)
+                    handle(.tapNewTask)
                 } label: {
-                    Label("New chat", systemImage: "square.and.pencil")
+                    Label("New task", systemImage: "square.and.pencil")
                         .labelStyle(.iconOnly)
                         .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.borderless)
-                .help("New chat")
-                .accessibilityIdentifier(ChatAccessibilityID.newChatButton)
+                .help("New task")
+                .accessibilityIdentifier(TaskWorkspaceAccessibilityID.newTaskButton)
             }
 
             if let errorMessage {
                 ErrorBanner(message: errorMessage)
-                    .accessibilityIdentifier(ChatAccessibilityID.persistenceError)
+                    .accessibilityIdentifier(TaskWorkspaceAccessibilityID.persistenceError)
             }
 
             if isLoading && sessions.isEmpty {
@@ -491,16 +510,16 @@ private struct HistorySidebar: View {
                     Image(systemName: "tray")
                         .font(.title3)
                         .foregroundStyle(.secondary)
-                    Text("No saved chats")
+                    Text("No tasks")
                         .font(.callout.weight(.semibold))
-                    Text("Start a chat and it will appear here.")
+                    Text("Start a task and it will appear here.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 18)
                 .accessibilityElement(children: .combine)
-                .accessibilityIdentifier(ChatAccessibilityID.historyEmptyState)
+                .accessibilityIdentifier(TaskWorkspaceAccessibilityID.historyEmptyState)
                 Spacer()
             } else {
                 ScrollView {
@@ -522,7 +541,7 @@ private struct HistorySidebar: View {
                             let isSelected = selectedRunID == session.id
                             Button {
                                 guard !isSelected else { return }
-                                handle(.tapChat(session.id))
+                                handle(.tapTask(session.id))
                             } label: {
                                 HistoryRow(
                                     session: session,
@@ -534,7 +553,7 @@ private struct HistorySidebar: View {
                         }
                     }
                 }
-                .accessibilityIdentifier(ChatAccessibilityID.historyList)
+                .accessibilityIdentifier(TaskWorkspaceAccessibilityID.historyList)
             }
         }
         .padding(14)
@@ -543,7 +562,7 @@ private struct HistorySidebar: View {
 }
 
 private struct HistoryRow: View {
-    let session: ChatSessionSummaryState
+    let session: TaskSummaryState
     let isSelected: Bool
 
     var body: some View {
@@ -571,12 +590,12 @@ private struct HistoryRow: View {
     }
 }
 
-private struct ChatHeader: View {
+private struct TaskHeader: View {
     let isRunning: Bool
     let runID: UUID?
     let canInspect: Bool
     let canCancel: Bool
-    let handle: (ChatPageAction) -> Void
+    let handle: (TaskWorkspaceAction) -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -589,7 +608,7 @@ private struct ChatHeader: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Hephaestus Chat")
+                    Text("Task Workspace")
                     .font(.headline)
                 Text(runSubtitle)
                     .font(.caption)
@@ -609,7 +628,7 @@ private struct ChatHeader: View {
             .disabled(!canInspect)
             .help("Inspect run")
             .accessibilityLabel("Inspect run")
-            .accessibilityIdentifier(ChatAccessibilityID.inspectorButton)
+            .accessibilityIdentifier(TaskWorkspaceAccessibilityID.inspectorButton)
 
             Button {
                 handle(.tapCancel)
@@ -633,7 +652,7 @@ private struct ChatHeader: View {
             .buttonStyle(.borderless)
             .help("Provider settings")
             .accessibilityLabel("Provider settings")
-            .accessibilityIdentifier(ChatAccessibilityID.settingsButton)
+            .accessibilityIdentifier(TaskWorkspaceAccessibilityID.settingsButton)
 
             HStack(spacing: 6) {
                 Circle()
@@ -648,7 +667,7 @@ private struct ChatHeader: View {
             .background(Color.primary.opacity(0.06))
             .clipShape(Capsule())
             .accessibilityLabel(isRunning ? "Assistant responding" : "Assistant ready")
-            .accessibilityIdentifier(isRunning ? ChatAccessibilityID.runningStatus : "chat.readyStatus")
+            .accessibilityIdentifier(isRunning ? TaskWorkspaceAccessibilityID.runningStatus : "task.readyStatus")
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
@@ -659,11 +678,11 @@ private struct ChatHeader: View {
         guard let runID else {
             return "New local run"
         }
-        return "Run \(runID.uuidString.prefix(8))"
+        return "Foundry task \(runID.uuidString.prefix(8))"
     }
 }
 
-private struct EmptyChatState: View {
+private struct EmptyTaskState: View {
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: "sparkles")
@@ -672,9 +691,9 @@ private struct EmptyChatState: View {
                 .accessibilityHidden(true)
 
             VStack(spacing: 5) {
-                Text("Start a focused run")
+                Text("Start a focused task")
                     .font(.title3.weight(.semibold))
-                Text("Ask a question, test an idea, or capture the next implementation step.")
+                Text("Describe the task, then inspect the run as it moves through the workspace.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -683,7 +702,7 @@ private struct EmptyChatState: View {
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier(ChatAccessibilityID.emptyState)
+        .accessibilityIdentifier(TaskWorkspaceAccessibilityID.emptyState)
     }
 }
 
@@ -692,14 +711,14 @@ private struct RunningStatus: View {
         HStack(spacing: 8) {
             ProgressView()
                 .controlSize(.small)
-            Text("Assistant is writing")
+            Text("Foundry is running")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.leading, 6)
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier(ChatAccessibilityID.runningStatus)
+        .accessibilityIdentifier(TaskWorkspaceAccessibilityID.runningStatus)
     }
 }
 
@@ -725,14 +744,14 @@ private struct ErrorBanner: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.red.opacity(0.22), lineWidth: 1)
         }
-        .accessibilityLabel("Chat error: \(message)")
-        .accessibilityIdentifier(ChatAccessibilityID.errorBanner)
+        .accessibilityLabel("Task error: \(message)")
+        .accessibilityIdentifier(TaskWorkspaceAccessibilityID.errorBanner)
     }
 }
 
 private struct ProviderSettingsSheet: View {
     let state: ProviderSettingsPanelState
-    let handle: (ChatPageAction) -> Void
+    let handle: (TaskWorkspaceAction) -> Void
 
     private var canSubmit: Bool {
         !state.isSaving && state.validation != .validating
@@ -762,7 +781,7 @@ private struct ProviderSettingsSheet: View {
                         set: { handle(.changeProviderBaseURL($0)) }
                     ))
                     .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier(ChatAccessibilityID.providerBaseURL)
+                    .accessibilityIdentifier(TaskWorkspaceAccessibilityID.providerBaseURL)
                 }
 
                 LabeledContent("API key") {
@@ -771,7 +790,7 @@ private struct ProviderSettingsSheet: View {
                         set: { handle(.changeProviderAPIKey($0)) }
                     ))
                     .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier(ChatAccessibilityID.providerAPIKey)
+                    .accessibilityIdentifier(TaskWorkspaceAccessibilityID.providerAPIKey)
                 }
 
                 LabeledContent("Model") {
@@ -780,7 +799,7 @@ private struct ProviderSettingsSheet: View {
                         set: { handle(.changeProviderModel($0)) }
                     ))
                     .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier(ChatAccessibilityID.providerModel)
+                    .accessibilityIdentifier(TaskWorkspaceAccessibilityID.providerModel)
                 }
             }
 
@@ -795,7 +814,7 @@ private struct ProviderSettingsSheet: View {
                     handle(.clearProviderSettings)
                 }
                 .disabled(state.isSaving)
-                .accessibilityIdentifier(ChatAccessibilityID.providerClear)
+                .accessibilityIdentifier(TaskWorkspaceAccessibilityID.providerClear)
 
                 Spacer()
 
@@ -803,14 +822,14 @@ private struct ProviderSettingsSheet: View {
                     handle(.validateProviderSettings)
                 }
                 .disabled(!canSubmit)
-                .accessibilityIdentifier(ChatAccessibilityID.providerValidate)
+                .accessibilityIdentifier(TaskWorkspaceAccessibilityID.providerValidate)
 
                 Button("Save") {
                     handle(.saveProviderSettings)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!canSubmit)
-                .accessibilityIdentifier(ChatAccessibilityID.providerSave)
+                .accessibilityIdentifier(TaskWorkspaceAccessibilityID.providerSave)
             }
         }
         .padding(22)
@@ -873,21 +892,21 @@ private struct RunInspectorSheet: View {
         }
         .padding(22)
         .frame(width: 720, height: 620)
-        .accessibilityIdentifier(ChatAccessibilityID.inspectorPanel)
+        .accessibilityIdentifier(TaskWorkspaceAccessibilityID.inspectorPanel)
     }
 }
 
 private struct RunInspectionContent: View {
-    let inspection: PersistedRunInspection
+    let inspection: RunInspectionSnapshot
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 InspectorSection(title: "Timeline") {
-                    if inspection.orderedEvents.isEmpty {
+                    if inspection.events.isEmpty {
                         UnavailableRow(text: "No runtime events are available.")
                     } else {
-                        ForEach(inspection.orderedEvents) { event in
+                        ForEach(inspection.events) { event in
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("\(event.sequence). \(event.kind.rawValue)")
                                     .font(.caption.weight(.semibold))
@@ -909,23 +928,23 @@ private struct RunInspectionContent: View {
                         }
                     }
                 }
-                .accessibilityIdentifier(ChatAccessibilityID.inspectorTimeline)
+                .accessibilityIdentifier(TaskWorkspaceAccessibilityID.inspectorTimeline)
 
                 InspectorSection(title: "Turns") {
-                    if inspection.session.turns.isEmpty {
+                    if inspection.turns.isEmpty {
                         UnavailableRow(text: "No turns are available.")
                     } else {
-                        ForEach(inspection.session.turns) { turn in
-                            TurnInspectionRow(turn: turn, messages: inspection.session.messages)
+                        ForEach(inspection.turns) { turn in
+                            TurnInspectionRow(turn: turn)
                         }
                     }
                 }
 
                 InspectorSection(title: "Provider") {
-                    if inspection.session.providerRequests.isEmpty {
+                    if inspection.providerRequests.isEmpty {
                         UnavailableRow(text: "Provider request details are unavailable.")
                     } else {
-                        ForEach(inspection.session.providerRequests) { request in
+                        ForEach(inspection.providerRequests) { request in
                             Text("\(request.model): \(request.messageCount) messages, stream \(request.stream ? "on" : "off"), system prompt \(request.systemPromptIncluded ? "included" : "excluded")")
                                 .font(.caption)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -937,11 +956,11 @@ private struct RunInspectionContent: View {
                 }
 
                 InspectorSection(title: "Context") {
-                    if inspection.session.contextTraces.isEmpty {
+                    if inspection.contextTraces.isEmpty {
                         UnavailableRow(text: "Context details are unavailable.")
                     } else {
-                        ForEach(inspection.session.contextTraces) { trace in
-                            ContextTraceRow(trace: trace, messages: inspection.session.messages)
+                        ForEach(inspection.contextTraces) { trace in
+                            ContextTraceRow(trace: trace)
                         }
                     }
                 }
@@ -965,18 +984,17 @@ private struct InspectorSection<Content: View>: View {
 }
 
 private struct TurnInspectionRow: View {
-    let turn: Turn
-    let messages: [RunMessage]
+    let turn: ObservedTurn
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Turn \(turn.id.uuidString.prefix(8)) - \(String(describing: turn.status))")
+            Text("Turn \(turn.id.uuidString.prefix(8)) - \(turn.status.rawValue)")
                 .font(.caption.weight(.semibold))
-            Text("User: \(messageText(turn.userMessageID))")
+            Text("User message: \(shortID(turn.userMessageID))")
                 .font(.caption)
                 .textSelection(.enabled)
             if let assistantMessageID = turn.assistantMessageID {
-                Text("Assistant: \(messageText(assistantMessageID))")
+                Text("Assistant message: \(assistantMessageID.uuidString.prefix(8))")
                     .font(.caption)
                     .textSelection(.enabled)
             } else {
@@ -991,14 +1009,13 @@ private struct TurnInspectionRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    private func messageText(_ id: UUID) -> String {
-        messages.first(where: { $0.id == id })?.text ?? "Unavailable"
+    private func shortID(_ id: UUID?) -> String {
+        id.map { String($0.uuidString.prefix(8)) } ?? "unavailable"
     }
 }
 
 private struct ContextTraceRow: View {
-    let trace: PersistedContextTrace
-    let messages: [RunMessage]
+    let trace: ObservedContextTrace
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1013,8 +1030,8 @@ private struct ContextTraceRow: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            ContextMessageList(title: "Included", ids: trace.includedMessageIDs, emptyText: "No messages were included.", messages: messages)
-            ContextMessageList(title: "Excluded", ids: trace.excludedMessageIDs, emptyText: "No messages were excluded.", messages: messages)
+            ContextMessageList(title: "Included", ids: trace.includedMessageIDs, emptyText: "No messages were included.")
+            ContextMessageList(title: "Excluded", ids: trace.excludedMessageIDs, emptyText: "No messages were excluded.")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
@@ -1027,7 +1044,6 @@ private struct ContextMessageList: View {
     let title: String
     let ids: [UUID]
     let emptyText: String
-    let messages: [RunMessage]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -1040,19 +1056,12 @@ private struct ContextMessageList: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(ids, id: \.self) { id in
-                    Text(summary(for: id))
+                    Text("Message \(id.uuidString.prefix(8))")
                         .font(.caption)
                         .textSelection(.enabled)
                 }
             }
         }
-    }
-
-    private func summary(for id: UUID) -> String {
-        guard let message = messages.first(where: { $0.id == id }) else {
-            return "Unavailable message \(id.uuidString.prefix(8))"
-        }
-        return "\(message.role.rawValue): \(message.text)"
     }
 }
 
@@ -1071,7 +1080,7 @@ private struct UnavailableRow: View {
 }
 
 private struct MessageBubble: View {
-    let message: ChatMessageState
+    let message: ConversationMessageState
 
     private var isUser: Bool {
         message.role == .user
@@ -1133,38 +1142,38 @@ private struct MessageBubble: View {
 }
 
 @MainActor
-public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAction> {
-    private let workspace: ChatWorkspaceService
+public final class TaskWorkspaceInteractor: BaseInteractor<TaskWorkspaceState, TaskWorkspaceAction> {
+    private let workspace: TaskWorkspaceService
     private let initialRunID: UUID?
     private let loadProviderSettings: LoadProviderSettingsUseCase?
     private let saveProviderSettings: SaveProviderSettingsUseCase?
     private let clearProviderSettings: ClearProviderSettingsUseCase?
     private let validateProviderSettings: ValidateProviderSettingsUseCase?
-    private let inspectRun: InspectRunUseCase?
+    private let loadRunInspection: LoadRunInspectionUseCase?
     private let subscribeToWorkspace: Bool
     private var didLoadInitialState = false
     private var workspaceTaskID: UUID?
     private var lifecycleTaskID: UUID?
 
     public init(
-        input: ChatRouteInput,
-        workspace: ChatWorkspaceService,
+        input: TaskWorkspaceRouteInput,
+        workspace: TaskWorkspaceService,
         loadProviderSettings: LoadProviderSettingsUseCase? = nil,
         saveProviderSettings: SaveProviderSettingsUseCase? = nil,
         clearProviderSettings: ClearProviderSettingsUseCase? = nil,
         validateProviderSettings: ValidateProviderSettingsUseCase? = nil,
-        inspectRun: InspectRunUseCase? = nil,
+        loadRunInspection: LoadRunInspectionUseCase? = nil,
         subscribeToWorkspace: Bool = true
     ) {
         self.workspace = workspace
-        self.initialRunID = input.runID
+        self.initialRunID = input.taskID
         self.loadProviderSettings = loadProviderSettings
         self.saveProviderSettings = saveProviderSettings
         self.clearProviderSettings = clearProviderSettings
         self.validateProviderSettings = validateProviderSettings
-        self.inspectRun = inspectRun
+        self.loadRunInspection = loadRunInspection
         self.subscribeToWorkspace = subscribeToWorkspace
-        super.init(initialState: ChatPageState(runID: input.runID))
+        super.init(initialState: TaskWorkspaceState(runID: input.taskID))
     }
 
     public override func onAppear() {
@@ -1190,16 +1199,16 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
         super.onDisappear()
     }
 
-    public override func handleAction(_ action: ChatPageAction) async {
+    public override func handleAction(_ action: TaskWorkspaceAction) async {
         switch action {
         case .changeDraft(let text):
             handleChangeDraft(text)
         case .tapSend:
             await handleTapSend()
-        case .tapNewChat:
-            await handleTapNewChat()
-        case .tapChat(let id):
-            await handleTapChat(id)
+        case .tapNewTask:
+            await handleTapNewTask()
+        case .tapTask(let id):
+            await handleTapTask(id)
         case .tapCancel:
             handleTapCancel()
         case .tapSettings:
@@ -1239,7 +1248,7 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
         guard subscribeToWorkspace else { return }
         await workspace.refreshSummaries()
         if let initialRunID {
-            await workspace.selectChat(initialRunID, force: true)
+            await workspace.selectTask(initialRunID, force: true)
         }
         if workspaceTaskID == nil {
             attachToWorkspace()
@@ -1257,8 +1266,8 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
         let text = state.draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
-        if let runID = state.runID, workspace.snapshot.selectedChatID != runID {
-            let selected = await workspace.selectChat(runID, force: true)
+        if let runID = state.runID, workspace.snapshot.selectedTaskID != runID {
+            let selected = await workspace.selectTask(runID, force: true)
             apply(workspace.snapshot)
             guard selected else {
                 return
@@ -1278,8 +1287,8 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
         }
     }
 
-    private func handleTapNewChat() async {
-        let changed = await workspace.createNewChat(title: nil)
+    private func handleTapNewTask() async {
+        let changed = await workspace.createNewTask(title: nil)
         apply(workspace.snapshot)
         if changed {
             setState {
@@ -1289,9 +1298,9 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
         }
     }
 
-    private func handleTapChat(_ id: UUID) async {
+    private func handleTapTask(_ id: UUID) async {
         guard state.runID != id else { return }
-        let changed = await workspace.selectChat(id)
+        let changed = await workspace.selectTask(id)
         apply(workspace.snapshot)
         if changed {
             setState {
@@ -1321,19 +1330,19 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
         workspaceTaskID = nil
     }
 
-    private func apply(_ snapshot: ChatWorkspaceSnapshot) {
+    private func apply(_ snapshot: TaskWorkspaceSnapshot) {
         setState { state in
             if let currentSnapshot = state.workspaceSnapshot,
                snapshot.revision < currentSnapshot.revision {
                 return
             }
             state.workspaceSnapshot = snapshot
-            if let selectedChatID = snapshot.selectedChatID {
-                state.runID = selectedChatID
-                state.selectedSnapshot = snapshot.selectedChat
-                state.messages = snapshot.selectedChat?.messages ?? []
-                state.isRunning = snapshot.selectedChat?.isRunning ?? false
-                state.errorMessage = snapshot.selectedChat?.errorMessage ?? snapshot.selectionError?.description
+            if let selectedTaskID = snapshot.selectedTaskID {
+                state.runID = selectedTaskID
+                state.selectedSnapshot = snapshot.selectedTask
+                state.messages = snapshot.selectedTask?.messages ?? []
+                state.isRunning = snapshot.selectedTask?.isRunning ?? false
+                state.errorMessage = snapshot.selectedTask?.errorMessage ?? snapshot.selectionError?.description
             } else if state.runID == nil, !state.isRunning {
                 state.selectedSnapshot = nil
                 state.messages = []
@@ -1342,7 +1351,7 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
             } else if let selectionError = snapshot.selectionError {
                 state.errorMessage = selectionError.description
             }
-            state.sessions = snapshot.sessions.mapError(ChatPageError.init)
+            state.sessions = snapshot.sessions.mapError(TaskWorkspaceError.init)
         }
     }
 
@@ -1442,19 +1451,19 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
     }
 
     private func handleTapInspector() async {
-        guard let runID = state.runID, let inspectRun else { return }
+        guard let runID = state.runID, let loadRunInspection else { return }
         setState {
             $0.inspector.isPresented = true
             $0.inspector.loadState = .loading(placeholder: $0.inspector.inspection)
         }
         do {
-            let inspection = try await inspectRun.inspectRun(sessionID: runID)
+            let inspection = try await loadRunInspection.loadRunInspection(runID: runID)
             setState {
                 $0.inspector.loadState = .loaded(inspection)
             }
         } catch {
             setState {
-                $0.inspector.loadState = .error(ChatPageError(error))
+                $0.inspector.loadState = .error(TaskWorkspaceError(error))
             }
         }
     }
@@ -1468,49 +1477,33 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
     }
 }
 
-public enum ChatRoutes {
+public enum TaskWorkspaceRoutes {
     public static var registration: RouteRegistration {
         RouteRegistration(
-            routeID: ChatRouteInput.routeID,
-            version: ChatRouteInput.version,
+            routeID: TaskWorkspaceRouteInput.routeID,
+            version: TaskWorkspaceRouteInput.version,
             decodeDeepLink: { url in
                 guard url.host == "route",
-                      url.pathComponents.filter({ $0 != "/" }).first == ChatRouteInput.routeID
+                      url.pathComponents.filter({ $0 != "/" }).first == TaskWorkspaceRouteInput.routeID
                 else { return nil }
                 let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-                let runIDValue = components?.queryItems?.first(where: { $0.name == "runID" })?.value
-                let runID: UUID?
-                if let runIDValue {
-                    guard let parsedRunID = UUID(uuidString: runIDValue) else {
+                let taskIDValue = components?.queryItems?.first(where: { $0.name == "taskID" })?.value
+                let taskID: UUID?
+                if let taskIDValue {
+                    guard let parsedTaskID = UUID(uuidString: taskIDValue) else {
                         return nil
                     }
-                    runID = parsedRunID
+                    taskID = parsedTaskID
                 } else {
-                    runID = nil
+                    taskID = nil
                 }
-                return try AnyRouteInput(ChatRouteInput(runID: runID))
+                return try AnyRouteInput(TaskWorkspaceRouteInput(taskID: taskID))
             },
             build: { anyInput, context in
-                let input = try anyInput.decode(ChatRouteInput.self)
-                let loadProviderSettings = try? context.dependency(LoadProviderSettingsUseCase.self)
-                let saveProviderSettings = try? context.dependency(SaveProviderSettingsUseCase.self)
-                let clearProviderSettings = try? context.dependency(ClearProviderSettingsUseCase.self)
-                let validateProviderSettings = try? context.dependency(ValidateProviderSettingsUseCase.self)
-                let inspectRun = try? context.dependency(InspectRunUseCase.self)
-                let workspace = try context.dependency(ChatWorkspaceService.self)
-                return AnyView(
-                    Page(
-                        interactor: ChatPageInteractor(
-                            input: input,
-                            workspace: workspace,
-                            loadProviderSettings: loadProviderSettings,
-                            saveProviderSettings: saveProviderSettings,
-                            clearProviderSettings: clearProviderSettings,
-                            validateProviderSettings: validateProviderSettings,
-                            inspectRun: inspectRun
-                        ),
-                        view: ChatPage.init
-                    )
+                let input = try anyInput.decode(TaskWorkspaceRouteInput.self)
+                return try buildTaskWorkspace(
+                    input: input,
+                    context: context
                 )
             }
         )
@@ -1518,38 +1511,46 @@ public enum ChatRoutes {
 
     public static var settingsModalRegistration: ModalRegistration {
         ModalRegistration(
-            modalID: ChatSettingsModalInput.modalID,
-            version: ChatSettingsModalInput.version,
+            modalID: TaskWorkspaceSettingsModalInput.modalID,
+            version: TaskWorkspaceSettingsModalInput.version,
             decodeDeepLink: { url in
                 guard url.host == "modal",
-                      url.pathComponents.filter({ $0 != "/" }).first == ChatSettingsModalInput.modalID
+                      url.pathComponents.filter({ $0 != "/" }).first == TaskWorkspaceSettingsModalInput.modalID
                 else { return nil }
-                return try AnyModalInput(ChatSettingsModalInput())
+                return try AnyModalInput(TaskWorkspaceSettingsModalInput())
             },
             build: { _, context in
-                let loadProviderSettings = try? context.dependency(LoadProviderSettingsUseCase.self)
-                let saveProviderSettings = try? context.dependency(SaveProviderSettingsUseCase.self)
-                let clearProviderSettings = try? context.dependency(ClearProviderSettingsUseCase.self)
-                let validateProviderSettings = try? context.dependency(ValidateProviderSettingsUseCase.self)
-                let workspace = try context.dependency(ChatWorkspaceService.self)
-                return AnyView(
-                    Page(
-                        interactor: ChatPageInteractor(
-                            input: ChatRouteInput(runID: nil),
-                            workspace: workspace,
-                            loadProviderSettings: loadProviderSettings,
-                            saveProviderSettings: saveProviderSettings,
-                            clearProviderSettings: clearProviderSettings,
-                            validateProviderSettings: validateProviderSettings,
-                            subscribeToWorkspace: false
-                        ),
-                        view: { state, handle in
-                            ProviderSettingsSheet(state: state.providerSettings, handle: handle)
-                                .task { handle(.tapSettings) }
-                        }
-                    )
-                )
+                let workspace = try context.dependency(TaskWorkspaceService.self)
+                let input = TaskWorkspaceRouteInput(taskID: workspace.snapshot.selectedTaskID)
+                return try buildTaskWorkspace(input: input, context: context)
             }
+        )
+    }
+
+    @MainActor
+    private static func buildTaskWorkspace(
+        input: TaskWorkspaceRouteInput,
+        context: RouteBuildContext
+    ) throws -> AnyView {
+        let loadProviderSettings = try? context.dependency(LoadProviderSettingsUseCase.self)
+        let saveProviderSettings = try? context.dependency(SaveProviderSettingsUseCase.self)
+        let clearProviderSettings = try? context.dependency(ClearProviderSettingsUseCase.self)
+        let validateProviderSettings = try? context.dependency(ValidateProviderSettingsUseCase.self)
+        let loadRunInspection = try? context.dependency(LoadRunInspectionUseCase.self)
+        let workspace = try context.dependency(TaskWorkspaceService.self)
+        return AnyView(
+            Page(
+                interactor: TaskWorkspaceInteractor(
+                    input: input,
+                    workspace: workspace,
+                    loadProviderSettings: loadProviderSettings,
+                    saveProviderSettings: saveProviderSettings,
+                    clearProviderSettings: clearProviderSettings,
+                    validateProviderSettings: validateProviderSettings,
+                    loadRunInspection: loadRunInspection
+                ),
+                view: TaskWorkspacePage.init
+            )
         )
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import HephaestusHarness
 import HephaestusKernel
 import HephaestusLLM
 import HephaestusRuntime
@@ -154,6 +155,10 @@ public enum RuntimeProviderConfiguration {
 }
 
 public enum RuntimeComposition {
+    public static var nativeBackendDescriptor: HarnessBackendDescriptor {
+        FoundryBackend.descriptor
+    }
+
     public static func make(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         mockDelayNanoseconds: UInt64 = 0

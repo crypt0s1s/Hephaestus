@@ -8,8 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		210F78112F8E4C850000B61B /* Anvil in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78162F8E4C850000B61B /* Anvil */; };
-		210F78122F8E4C850000B61B /* ChatContracts in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78172F8E4C850000B61B /* ChatContracts */; };
-		210F78132F8E4C850000B61B /* ChatFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78182F8E4C850000B61B /* ChatFeature */; };
+		210F78122F8E4C850000B61B /* TaskWorkspaceContracts in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78172F8E4C850000B61B /* TaskWorkspaceContracts */; };
+		210F78132F8E4C850000B61B /* TaskWorkspaceFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78182F8E4C850000B61B /* TaskWorkspaceFeature */; };
 		210F78142F8E4C850000B61B /* HephaestusComposition in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78192F8E4C850000B61B /* HephaestusComposition */; };
 		210F78152F8E4C850000B61B /* HephaestusRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 210F781A2F8E4C850000B61B /* HephaestusRuntime */; };
 /* End PBXBuildFile section */
@@ -61,8 +61,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				210F78112F8E4C850000B61B /* Anvil in Frameworks */,
-				210F78122F8E4C850000B61B /* ChatContracts in Frameworks */,
-				210F78132F8E4C850000B61B /* ChatFeature in Frameworks */,
+				210F78122F8E4C850000B61B /* TaskWorkspaceContracts in Frameworks */,
+				210F78132F8E4C850000B61B /* TaskWorkspaceFeature in Frameworks */,
 				210F78142F8E4C850000B61B /* HephaestusComposition in Frameworks */,
 				210F78152F8E4C850000B61B /* HephaestusRuntime in Frameworks */,
 			);
@@ -126,8 +126,8 @@
 			name = Hephaestus;
 			packageProductDependencies = (
 				210F78162F8E4C850000B61B /* Anvil */,
-				210F78172F8E4C850000B61B /* ChatContracts */,
-				210F78182F8E4C850000B61B /* ChatFeature */,
+				210F78172F8E4C850000B61B /* TaskWorkspaceContracts */,
+				210F78182F8E4C850000B61B /* TaskWorkspaceFeature */,
 				210F78192F8E4C850000B61B /* HephaestusComposition */,
 				210F781A2F8E4C850000B61B /* HephaestusRuntime */,
 			);
@@ -616,15 +616,15 @@
 			package = 210F781B2F8E4C850000B61B /* XCLocalSwiftPackageReference "." */;
 			productName = Anvil;
 		};
-		210F78172F8E4C850000B61B /* ChatContracts */ = {
+		210F78172F8E4C850000B61B /* TaskWorkspaceContracts */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 210F781B2F8E4C850000B61B /* XCLocalSwiftPackageReference "." */;
-			productName = ChatContracts;
+			productName = TaskWorkspaceContracts;
 		};
-		210F78182F8E4C850000B61B /* ChatFeature */ = {
+		210F78182F8E4C850000B61B /* TaskWorkspaceFeature */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 210F781B2F8E4C850000B61B /* XCLocalSwiftPackageReference "." */;
-			productName = ChatFeature;
+			productName = TaskWorkspaceFeature;
 		};
 		210F78192F8E4C850000B61B /* HephaestusComposition */ = {
 			isa = XCSwiftPackageProductDependency;

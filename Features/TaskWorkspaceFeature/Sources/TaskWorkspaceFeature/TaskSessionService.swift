@@ -1,9 +1,10 @@
 import Anvil
-import ChatContracts
 import Foundation
+import HephaestusDomain
 import HephaestusRuntime
+import TaskWorkspaceContracts
 
-public struct ChatSessionError: Error, Equatable, Sendable, CustomStringConvertible {
+public struct TaskSessionError: Error, Equatable, Sendable, CustomStringConvertible {
     public let description: String
 
     public init(_ description: String) {
@@ -15,7 +16,7 @@ public struct ChatSessionError: Error, Equatable, Sendable, CustomStringConverti
     }
 }
 
-public struct ChatWorkspaceError: Error, Equatable, Sendable, CustomStringConvertible {
+public struct TaskWorkspaceServiceError: Error, Equatable, Sendable, CustomStringConvertible {
     public let description: String
 
     public init(_ description: String) {
@@ -37,28 +38,39 @@ public struct TurnProgressState: Equatable, Sendable {
     }
 }
 
-public struct ChatSessionSnapshot: Equatable, Sendable {
+public struct TaskSessionSnapshot: Equatable, Sendable {
     public var id: UUID
+    public var task: AgentTask
     public var title: String
-    public var transcript: StoreState<[ChatMessageState], ChatSessionError>
-    public var turnState: StoreState<TurnProgressState, ChatSessionError>
+    public var transcript: StoreState<[ConversationMessageState], TaskSessionError>
+    public var turnState: StoreState<TurnProgressState, TaskSessionError>
     public var updatedAt: Date
 
     public init(
         id: UUID,
         title: String,
-        transcript: StoreState<[ChatMessageState], ChatSessionError> = .loaded([]),
-        turnState: StoreState<TurnProgressState, ChatSessionError> = .loaded(TurnProgressState()),
+        task: AgentTask? = nil,
+        transcript: StoreState<[ConversationMessageState], TaskSessionError> = .loaded([]),
+        turnState: StoreState<TurnProgressState, TaskSessionError> = .loaded(TurnProgressState()),
         updatedAt: Date = Date()
     ) {
         self.id = id
+        self.task = task ?? AgentTask(
+            id: TaskID(rawValue: id),
+            projectID: DefaultProject.id,
+            title: title,
+            status: .draft,
+            createdAt: updatedAt,
+            updatedAt: updatedAt,
+            activeRunID: id
+        )
         self.title = title
         self.transcript = transcript
         self.turnState = turnState
         self.updatedAt = updatedAt
     }
 
-    public var messages: [ChatMessageState] {
+    public var messages: [ConversationMessageState] {
         transcript.data ?? []
     }
 
@@ -78,39 +90,39 @@ public struct ChatSessionSnapshot: Equatable, Sendable {
     }
 }
 
-public struct ChatWorkspaceSnapshot: Equatable, Sendable {
+public struct TaskWorkspaceSnapshot: Equatable, Sendable {
     public var revision: Int
-    public var selectedChatID: UUID?
-    public var selectedChat: ChatSessionSnapshot?
-    public var selectionError: ChatWorkspaceError?
-    public var sessions: StoreState<[ChatSessionSummaryState], ChatWorkspaceError>
+    public var selectedTaskID: UUID?
+    public var selectedTask: TaskSessionSnapshot?
+    public var selectionError: TaskWorkspaceServiceError?
+    public var sessions: StoreState<[TaskSummaryState], TaskWorkspaceServiceError>
 
     public init(
         revision: Int = 0,
-        selectedChatID: UUID? = nil,
-        selectedChat: ChatSessionSnapshot? = nil,
-        selectionError: ChatWorkspaceError? = nil,
-        sessions: StoreState<[ChatSessionSummaryState], ChatWorkspaceError> = .loaded([])
+        selectedTaskID: UUID? = nil,
+        selectedTask: TaskSessionSnapshot? = nil,
+        selectionError: TaskWorkspaceServiceError? = nil,
+        sessions: StoreState<[TaskSummaryState], TaskWorkspaceServiceError> = .loaded([])
     ) {
         self.revision = revision
-        self.selectedChatID = selectedChatID
-        self.selectedChat = selectedChat
+        self.selectedTaskID = selectedTaskID
+        self.selectedTask = selectedTask
         self.selectionError = selectionError
         self.sessions = sessions
     }
 }
 
 @MainActor
-public final class ChatSessionService {
-    public private(set) var snapshot: ChatSessionSnapshot
+public final class TaskSessionService {
+    public private(set) var snapshot: TaskSessionSnapshot
 
     private let streamUserMessage: StreamUserMessageUseCase
     private let onSummaryChanged: @MainActor () -> Void
-    private var snapshotContinuations: [UUID: AsyncStream<ChatSessionSnapshot>.Continuation] = [:]
+    private var snapshotContinuations: [UUID: AsyncStream<TaskSessionSnapshot>.Continuation] = [:]
     private var sendTask: Task<Void, Never>?
 
     public init(
-        snapshot: ChatSessionSnapshot,
+        snapshot: TaskSessionSnapshot,
         streamUserMessage: StreamUserMessageUseCase,
         onSummaryChanged: @escaping @MainActor () -> Void = {}
     ) {
@@ -125,10 +137,11 @@ public final class ChatSessionService {
         onSummaryChanged: @escaping @MainActor () -> Void = {}
     ) {
         self.init(
-            snapshot: ChatSessionSnapshot(
+            snapshot: TaskSessionSnapshot(
                 id: session.id,
                 title: session.title,
-                transcript: .loaded(session.messages.compactMap(ChatMessageState.init(message:))),
+                task: AgentTask(session: session),
+                transcript: .loaded(session.messages.compactMap(ConversationMessageState.init(message:))),
                 turnState: .loaded(TurnProgressState()),
                 updatedAt: session.updatedAt
             ),
@@ -141,7 +154,7 @@ public final class ChatSessionService {
         snapshot.id
     }
 
-    public func subscribeSnapshots(includeCurrent: Bool = true) -> AsyncStream<ChatSessionSnapshot> {
+    public func subscribeSnapshots(includeCurrent: Bool = true) -> AsyncStream<TaskSessionSnapshot> {
         AsyncStream { continuation in
             let subscriptionID = UUID()
             snapshotContinuations[subscriptionID] = continuation
@@ -189,7 +202,7 @@ public final class ChatSessionService {
                 }
             } catch {
                 await MainActor.run {
-                    self.failActiveTurn(ChatSessionError(error))
+                    self.failActiveTurn(TaskSessionError(error))
                     self.sendTask = nil
                     self.onSummaryChanged()
                 }
@@ -214,8 +227,8 @@ public final class ChatSessionService {
             case .runCreated(_, let runID):
                 snapshot.id = runID
             case .userMessageAccepted(let header, let messageID, let text):
-                messages.append(ChatMessageState(id: messageID, role: .user, text: text))
-                snapshot.title = snapshot.title == "New Chat" ? text.firstLineTitle : snapshot.title
+                messages.append(ConversationMessageState(id: messageID, role: .user, text: text))
+                snapshot.title = snapshot.title == "New Task" ? text.firstLineTitle : snapshot.title
                 snapshot.updatedAt = header.createdAt
                 snapshot.transcript = .loaded(messages)
                 snapshot.turnState = .loading(placeholder: TurnProgressState(activeTurnID: header.turnID, isRunning: true))
@@ -243,7 +256,7 @@ public final class ChatSessionService {
                 markStreamingAssistantComplete(in: &messages)
                 snapshot.updatedAt = header.createdAt
                 snapshot.transcript = .loaded(messages)
-                snapshot.turnState = .error(ChatSessionError(reason))
+                snapshot.turnState = .error(TaskSessionError(reason))
             }
         }
         if shouldRefreshSummary {
@@ -260,7 +273,7 @@ public final class ChatSessionService {
         }
     }
 
-    private func failActiveTurn(_ error: ChatSessionError) {
+    private func failActiveTurn(_ error: TaskSessionError) {
         updateSnapshot { snapshot in
             var messages = snapshot.messages
             markStreamingAssistantComplete(in: &messages)
@@ -269,8 +282,12 @@ public final class ChatSessionService {
         }
     }
 
-    private func updateSnapshot(_ update: (inout ChatSessionSnapshot) -> Void) {
+    private func updateSnapshot(_ update: (inout TaskSessionSnapshot) -> Void) {
         update(&snapshot)
+        snapshot.task.title = snapshot.title
+        snapshot.task.updatedAt = snapshot.updatedAt
+        snapshot.task.activeRunID = snapshot.id
+        snapshot.task.status = snapshot.taskStatus
         publishSnapshot()
     }
 
@@ -282,12 +299,12 @@ public final class ChatSessionService {
 }
 
 @MainActor
-public final class ChatSessionServiceRegistry {
+public final class TaskSessionServiceRegistry {
     private let createRun: CreateRunUseCase
     private let streamUserMessage: StreamUserMessageUseCase
     private let loadSession: LoadSessionUseCase?
     private let createSession: CreateSessionUseCase?
-    private var services: [UUID: ChatSessionService] = [:]
+    private var services: [UUID: TaskSessionService] = [:]
     private var onServiceSummaryChanged: @MainActor () -> Void = {}
 
     public init(
@@ -306,46 +323,46 @@ public final class ChatSessionServiceRegistry {
         self.onServiceSummaryChanged = onServiceSummaryChanged
     }
 
-    public func service(for id: UUID) async throws -> ChatSessionService {
+    public func service(for id: UUID) async throws -> TaskSessionService {
         if let service = services[id] {
             return service
         }
 
-        let service: ChatSessionService
+        let service: TaskSessionService
         if let loadSession {
             let session = try await loadSession.loadSession(id: id)
             service = makeService(session: session)
         } else {
-            service = makeService(snapshot: ChatSessionSnapshot(id: id, title: "New Chat"))
+            service = makeService(snapshot: TaskSessionSnapshot(id: id, title: "New Task"))
         }
         services[service.id] = service
         return service
     }
 
-    public func createService(title: String? = nil) async throws -> ChatSessionService {
-        let service: ChatSessionService
+    public func createService(title: String? = nil) async throws -> TaskSessionService {
+        let service: TaskSessionService
         if let createSession {
             let session = try await createSession.createSession(title: title)
             service = makeService(session: session)
         } else {
             let id = await createRun.createRun()
-            service = makeService(snapshot: ChatSessionSnapshot(id: id, title: title ?? "New Chat"))
+            service = makeService(snapshot: TaskSessionSnapshot(id: id, title: title ?? "New Task"))
         }
 
         services[service.id] = service
         return service
     }
 
-    private func makeService(session: PersistedSession) -> ChatSessionService {
-        ChatSessionService(
+    private func makeService(session: PersistedSession) -> TaskSessionService {
+        TaskSessionService(
             session: session,
             streamUserMessage: streamUserMessage,
             onSummaryChanged: onServiceSummaryChanged
         )
     }
 
-    private func makeService(snapshot: ChatSessionSnapshot) -> ChatSessionService {
-        ChatSessionService(
+    private func makeService(snapshot: TaskSessionSnapshot) -> TaskSessionService {
+        TaskSessionService(
             snapshot: snapshot,
             streamUserMessage: streamUserMessage,
             onSummaryChanged: onServiceSummaryChanged
@@ -354,21 +371,21 @@ public final class ChatSessionServiceRegistry {
 }
 
 @MainActor
-public final class ChatWorkspaceService {
-    public private(set) var snapshot: ChatWorkspaceSnapshot
+public final class TaskWorkspaceService {
+    public private(set) var snapshot: TaskWorkspaceSnapshot
 
-    private let registry: ChatSessionServiceRegistry
+    private let registry: TaskSessionServiceRegistry
     private let listSessions: ListSessionsUseCase?
     private let router: Router<AnyRouteInput, AnyModalInput>?
-    private var selectedService: ChatSessionService?
+    private var selectedService: TaskSessionService?
     private var selectedSnapshotTask: Task<Void, Never>?
-    private var snapshotContinuations: [UUID: AsyncStream<ChatWorkspaceSnapshot>.Continuation] = [:]
+    private var snapshotContinuations: [UUID: AsyncStream<TaskWorkspaceSnapshot>.Continuation] = [:]
 
     public init(
-        registry: ChatSessionServiceRegistry,
+        registry: TaskSessionServiceRegistry,
         listSessions: ListSessionsUseCase? = nil,
         router: Router<AnyRouteInput, AnyModalInput>? = nil,
-        snapshot: ChatWorkspaceSnapshot = ChatWorkspaceSnapshot()
+        snapshot: TaskWorkspaceSnapshot = TaskWorkspaceSnapshot()
     ) {
         self.registry = registry
         self.listSessions = listSessions
@@ -385,7 +402,7 @@ public final class ChatWorkspaceService {
         selectedSnapshotTask?.cancel()
     }
 
-    public func subscribeSnapshots() -> AsyncStream<ChatWorkspaceSnapshot> {
+    public func subscribeSnapshots() -> AsyncStream<TaskWorkspaceSnapshot> {
         AsyncStream { continuation in
             let subscriptionID = UUID()
             snapshotContinuations[subscriptionID] = continuation
@@ -399,27 +416,27 @@ public final class ChatWorkspaceService {
     }
 
     @discardableResult
-    public func selectChat(_ id: UUID, force: Bool = false) async -> Bool {
-        guard force || snapshot.selectedChatID != id else { return false }
+    public func selectTask(_ id: UUID, force: Bool = false) async -> Bool {
+        guard force || snapshot.selectedTaskID != id else { return false }
         do {
             let service = try await registry.service(for: id)
             attach(to: service)
             return true
         } catch {
-            detachSelection(error: ChatWorkspaceError(error))
+            detachSelection(error: TaskWorkspaceServiceError(error))
             return false
         }
     }
 
     @discardableResult
-    public func createNewChat(title: String? = nil) async -> Bool {
+    public func createNewTask(title: String? = nil) async -> Bool {
         do {
             let service = try await registry.createService(title: title)
             attach(to: service)
             await refreshSummaries()
             return true
         } catch {
-            setSessions(.error(ChatWorkspaceError(error)))
+            setSessions(.error(TaskWorkspaceServiceError(error)))
             return false
         }
     }
@@ -428,7 +445,7 @@ public final class ChatWorkspaceService {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return false }
 
-        let service: ChatSessionService
+        let service: TaskSessionService
         if let selectedService {
             service = selectedService
         } else {
@@ -437,7 +454,7 @@ public final class ChatWorkspaceService {
                 attach(to: service)
                 await refreshSummaries()
             } catch {
-                setSessions(.error(ChatWorkspaceError(error)))
+                setSessions(.error(TaskWorkspaceServiceError(error)))
                 return false
             }
         }
@@ -459,18 +476,18 @@ public final class ChatWorkspaceService {
         setSessions(.loading(placeholder: snapshot.sessions.data))
         do {
             let summaries = try await listSessions.listSessions()
-            setSessions(.loaded(summaries.map(ChatSessionSummaryState.init(summary:))))
+            setSessions(.loaded(summaries.map(TaskSummaryState.init(summary:))))
         } catch {
-            setSessions(.error(ChatWorkspaceError(error)))
+            setSessions(.error(TaskWorkspaceServiceError(error)))
         }
     }
 
-    private func attach(to service: ChatSessionService) {
+    private func attach(to service: TaskSessionService) {
         selectedSnapshotTask?.cancel()
         selectedService = service
         updateSnapshot { snapshot in
-            snapshot.selectedChatID = service.id
-            snapshot.selectedChat = service.snapshot
+            snapshot.selectedTaskID = service.id
+            snapshot.selectedTask = service.snapshot
             snapshot.selectionError = nil
         }
         syncSelectedRoute(service.id)
@@ -483,43 +500,43 @@ public final class ChatWorkspaceService {
         }
     }
 
-    private func detachSelection(error: ChatWorkspaceError) {
+    private func detachSelection(error: TaskWorkspaceServiceError) {
         selectedSnapshotTask?.cancel()
         selectedSnapshotTask = nil
         selectedService = nil
         updateSnapshot { snapshot in
-            snapshot.selectedChatID = nil
-            snapshot.selectedChat = nil
+            snapshot.selectedTaskID = nil
+            snapshot.selectedTask = nil
             snapshot.selectionError = error
         }
     }
 
     private func syncSelectedRoute(_ id: UUID) {
         guard let router,
-              let route = try? AnyRouteInput(ChatRouteInput(runID: id))
+              let route = try? AnyRouteInput(TaskWorkspaceRouteInput(taskID: id))
         else { return }
         if let current = router.path.last,
-           (try? current.decode(ChatRouteInput.self).runID) == id {
+           (try? current.decode(TaskWorkspaceRouteInput.self).taskID) == id {
             return
         }
         router.replaceStack([route])
     }
 
-    private func applySelectedServiceSnapshot(_ serviceSnapshot: ChatSessionSnapshot) {
-        guard snapshot.selectedChatID == serviceSnapshot.id else { return }
+    private func applySelectedServiceSnapshot(_ serviceSnapshot: TaskSessionSnapshot) {
+        guard snapshot.selectedTaskID == serviceSnapshot.id else { return }
         updateSnapshot { snapshot in
-            snapshot.selectedChatID = serviceSnapshot.id
-            snapshot.selectedChat = serviceSnapshot
+            snapshot.selectedTaskID = serviceSnapshot.id
+            snapshot.selectedTask = serviceSnapshot
         }
     }
 
-    private func setSessions(_ sessions: StoreState<[ChatSessionSummaryState], ChatWorkspaceError>) {
+    private func setSessions(_ sessions: StoreState<[TaskSummaryState], TaskWorkspaceServiceError>) {
         updateSnapshot { snapshot in
             snapshot.sessions = sessions
         }
     }
 
-    private func updateSnapshot(_ update: (inout ChatWorkspaceSnapshot) -> Void) {
+    private func updateSnapshot(_ update: (inout TaskWorkspaceSnapshot) -> Void) {
         update(&snapshot)
         snapshot.revision += 1
         publishSnapshot()
@@ -532,25 +549,25 @@ public final class ChatWorkspaceService {
     }
 }
 
-private func appendAssistantDelta(_ text: String, to messages: inout [ChatMessageState]) {
+private func appendAssistantDelta(_ text: String, to messages: inout [ConversationMessageState]) {
     if let index = messages.lastIndex(where: { $0.role == .assistant && $0.isStreaming }) {
         messages[index].text += text
     } else {
-        messages.append(ChatMessageState(role: .assistant, text: text, isStreaming: true))
+        messages.append(ConversationMessageState(role: .assistant, text: text, isStreaming: true))
     }
 }
 
-private func completeAssistantMessage(messageID: UUID, text: String, in messages: inout [ChatMessageState]) {
+private func completeAssistantMessage(messageID: UUID, text: String, in messages: inout [ConversationMessageState]) {
     if let index = messages.lastIndex(where: { $0.role == .assistant && $0.isStreaming }) {
         messages[index].id = messageID
         messages[index].text = text
         messages[index].isStreaming = false
     } else {
-        messages.append(ChatMessageState(id: messageID, role: .assistant, text: text))
+        messages.append(ConversationMessageState(id: messageID, role: .assistant, text: text))
     }
 }
 
-private func markStreamingAssistantComplete(in messages: inout [ChatMessageState]) {
+private func markStreamingAssistantComplete(in messages: inout [ConversationMessageState]) {
     if let index = messages.lastIndex(where: { $0.role == .assistant && $0.isStreaming }) {
         messages[index].isStreaming = false
     }
@@ -560,6 +577,22 @@ private extension String {
     var firstLineTitle: String {
         let firstLine = split(whereSeparator: \.isNewline).first.map(String.init) ?? self
         let trimmed = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "New Chat" : String(trimmed.prefix(80))
+        return trimmed.isEmpty ? "New Task" : String(trimmed.prefix(80))
+    }
+}
+
+private extension TaskSessionSnapshot {
+    var taskStatus: TaskStatus {
+        switch turnState {
+        case .loading:
+            return .running
+        case .loaded(let progress):
+            if progress.isRunning {
+                return .running
+            }
+            return messages.isEmpty ? .draft : .completed
+        case .error:
+            return .failed
+        }
     }
 }

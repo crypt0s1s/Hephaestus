@@ -6,12 +6,19 @@ This folder captures the current direction for Hephaestus as an agent system.
 
 - [Vision](./vision.md): the intended end state for the product and runtime.
 - [Roadmap](./roadmap.md): the staged plan from kernel proof of concept to multi-agent workflows.
+- [Observability Objectives](./observability-objectives.md): high-level goals for live inspection, event capture, backend observability, and future replay.
+- [Product UI Vision](./product-ui-vision.md): project/task/workflow UI direction and image-generation prompts for design exploration.
+- [UI Concept References](./UI/README.md): rough visual references and design notes for the future app interface.
+- [Modularization Objectives](./modularization-objectives.md): target package boundaries for projects, tasks, workflows, backends, observability, and feature modules.
 - [Next Step](./next-step.md): the immediate implementation target for the first kernel milestone.
 - [PRDs](./prd/README.md): product requirements that define user-facing capabilities, scope, acceptance criteria, and milestones.
 - [Workflows](./workflows/README.md): repeatable collaboration processes for implementing and reviewing changes.
+- [Feature Creation And Development Flow](./workflows/feature-creation-and-development-flow.md): PRD-first workflow for defining, designing, implementing, and validating feature work.
 - [ADR Template](./adr/template.md): template for recording architecture decisions as they are made.
+- [PRD-0009. Meta-Harness Foundation](./prd/0009-meta-harness-foundation.md): product scope for the first slice that moves Hephaestus from chat-first toward project/task/operator structure.
 - [Chat Log Runtime Architecture Map](./plans/0005-chat-log-runtime-architecture-map.md): current-state data flow map for chat logs, streaming, persistence, and UI projection.
 - [Chat Session Service Refactor Plan](./plans/0006-chat-session-service-refactor-plan.md): draft refactor sequence for moving long-lived chat IO out of page interactors.
+- [Meta-Harness Foundation Refactor Plan](./plans/0008-meta-harness-foundation-refactor.md): first incremental package/domain/observability slice for moving from chat-first UI toward project/task/workflow-state structure.
 
 ## Documentation Routing
 

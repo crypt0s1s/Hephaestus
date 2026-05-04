@@ -23,3 +23,4 @@ PRDs are separate from ADRs and implementation plans:
 - [PRD-0005. Context Management V1](./0005-context-management-v1.md)
 - [PRD-0006. Run Inspection](./0006-run-inspection.md)
 - [PRD-0007. Chat Experience UX V1](./0007-chat-experience-ux-v1.md)
+- [PRD-0009. Meta-Harness Foundation](./0009-meta-harness-foundation.md)

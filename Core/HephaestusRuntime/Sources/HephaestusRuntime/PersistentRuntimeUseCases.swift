@@ -1,5 +1,6 @@
 import Foundation
 import HephaestusKernel
+import HephaestusObservation
 
 public protocol LoadProviderSettingsUseCase: Sendable {
     func loadProviderSettings() async throws -> ProviderSettingsSummary?
@@ -153,7 +154,7 @@ public struct DefaultCreateSessionUseCase: CreateRunUseCase, CreateSessionUseCas
     }
 }
 
-public struct DefaultInspectRunUseCase: InspectRunUseCase {
+public struct DefaultInspectRunUseCase: InspectRunUseCase, LoadRunInspectionUseCase {
     private let store: AppStateStore
 
     public init(store: AppStateStore) {
@@ -166,6 +167,10 @@ public struct DefaultInspectRunUseCase: InspectRunUseCase {
             throw AppStateStoreFailure.sessionNotFound(sessionID)
         }
         return PersistedRunInspection(session: session)
+    }
+
+    public func loadRunInspection(runID: UUID) async throws -> RunInspectionSnapshot {
+        try await RunInspectionSnapshot(inspection: inspectRun(sessionID: runID))
     }
 }
 

@@ -17,7 +17,7 @@ final class HephaestusUITestsLaunchTests: XCTestCase {
         app.launch()
         openWindowIfNeeded(in: app)
 
-        XCTAssertTrue(app.staticTexts["Hephaestus Chat"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Task Workspace"].waitForExistence(timeout: 5))
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Launch Screen"
@@ -26,7 +26,7 @@ final class HephaestusUITestsLaunchTests: XCTestCase {
     }
 
     private func openWindowIfNeeded(in app: XCUIApplication) {
-        if app.staticTexts["Hephaestus Chat"].waitForExistence(timeout: 2) {
+        if app.staticTexts["Task Workspace"].waitForExistence(timeout: 2) {
             return
         }
         app.typeKey("n", modifierFlags: .command)

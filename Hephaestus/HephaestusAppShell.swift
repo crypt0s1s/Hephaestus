@@ -1,10 +1,11 @@
 import Anvil
-import ChatContracts
-import ChatFeature
 import Foundation
 import HephaestusComposition
+import HephaestusObservation
 import HephaestusRuntime
 import SwiftUI
+import TaskWorkspaceFeature
+import TaskWorkspaceContracts
 
 @MainActor
 struct HephaestusAppShell: View {
@@ -12,30 +13,30 @@ struct HephaestusAppShell: View {
 
     private let registry: DestinationRegistry
     private let runtime: PersistentAppRuntime
-    private let chatSessionRegistry: ChatSessionServiceRegistry
-    private let chatWorkspace: ChatWorkspaceService
+    private let taskSessionRegistry: TaskSessionServiceRegistry
+    private let taskWorkspace: TaskWorkspaceService
     private let startupRoute: AnyRouteInput
 
     init() throws {
         let appRouter = Router<AnyRouteInput, AnyModalInput>()
         _router = StateObject(wrappedValue: appRouter)
         runtime = try PersistentAppRuntime(store: FileAppStateStore(fileURL: Self.defaultAppStateURL))
-        chatSessionRegistry = ChatSessionServiceRegistry(
+        taskSessionRegistry = TaskSessionServiceRegistry(
             createRun: runtime,
             streamUserMessage: runtime,
             loadSession: runtime,
             createSession: runtime
         )
-        chatWorkspace = ChatWorkspaceService(
-            registry: chatSessionRegistry,
+        taskWorkspace = TaskWorkspaceService(
+            registry: taskSessionRegistry,
             listSessions: runtime,
             router: appRouter
         )
         registry = try DestinationRegistry(
-            routes: [ChatRoutes.registration],
-            modals: [ChatRoutes.settingsModalRegistration]
+            routes: [TaskWorkspaceRoutes.registration],
+            modals: [TaskWorkspaceRoutes.settingsModalRegistration]
         )
-        startupRoute = try AnyRouteInput(ChatRouteInput(runID: nil))
+        startupRoute = try AnyRouteInput(TaskWorkspaceRouteInput(taskID: nil))
     }
 
     var body: some View {
@@ -73,8 +74,10 @@ struct HephaestusAppShell: View {
                 return runtime
             } else if type == InspectRunUseCase.self {
                 return runtime
-            } else if type == ChatWorkspaceService.self {
-                return chatWorkspace
+            } else if type == LoadRunInspectionUseCase.self {
+                return runtime
+            } else if type == TaskWorkspaceService.self {
+                return taskWorkspace
             } else {
                 throw RouteBuildError.missingDependency(String(describing: type))
             }
@@ -100,7 +103,8 @@ actor PersistentAppRuntime:
     ListSessionsUseCase,
     LoadSessionUseCase,
     CreateSessionUseCase,
-    InspectRunUseCase
+    InspectRunUseCase,
+    LoadRunInspectionUseCase
 {
     private let store: AppStateStore
     private let providerOverride: RuntimeProviderSelection?
@@ -162,6 +166,10 @@ actor PersistentAppRuntime:
 
     func inspectRun(sessionID: UUID) async throws -> PersistedRunInspection {
         try await (await currentHarness()).inspectRun.inspectRun(sessionID: sessionID)
+    }
+
+    func loadRunInspection(runID: UUID) async throws -> RunInspectionSnapshot {
+        try await (await currentHarness()).inspectRun.loadRunInspection(runID: runID)
     }
 
     private func currentHarness() async -> PersistentRuntimeHarness {

@@ -1,13 +1,14 @@
 import Anvil
-import ChatContracts
-import ChatFeature
 import Foundation
 import HephaestusKernel
+import HephaestusObservation
 import HephaestusRuntime
+import TaskWorkspaceFeature
+import TaskWorkspaceContracts
 import Testing
 
 @Suite
-struct ChatPageInteractorTests {
+struct TaskWorkspaceInteractorTests {
     @Test
     @MainActor
     func progressiveStreamingBuildsAssistantBubbleThenCompletesIt() async throws {
@@ -68,12 +69,12 @@ struct ChatPageInteractorTests {
         }
 
         #expect(interactor.state.messages == [
-            ChatMessageState(
+            ConversationMessageState(
                 id: interactor.state.messages[0].id,
                 role: .user,
                 text: "plan the slice"
             ),
-            ChatMessageState(
+            ConversationMessageState(
                 id: completedMessageID,
                 role: .assistant,
                 text: "First draft",
@@ -160,7 +161,7 @@ struct ChatPageInteractorTests {
 
     @Test
     @MainActor
-    func inFlightResponseDoesNotAppendToNewlySelectedChat() async throws {
+    func inFlightResponseDoesNotAppendToNewlySelectedTask() async throws {
         let originalID = UUID()
         let targetID = UUID()
         let targetMessage = RunMessage(
@@ -189,7 +190,7 @@ struct ChatPageInteractorTests {
         }
 
         await streamUserMessage.waitUntilRequestCount(1)
-        await interactor.handleAction(.tapChat(targetID))
+        await interactor.handleAction(.tapTask(targetID))
 
         #expect(interactor.state.runID == targetID)
         #expect(interactor.state.messages.map(\.text) == ["target question"])
@@ -203,12 +204,12 @@ struct ChatPageInteractorTests {
         ))
         await streamUserMessage.yield(.assistantTextDelta(
             runtimeHeader(runID: originalID, turnID: turnID, sequence: 2),
-            "wrong chat"
+            "wrong task"
         ))
         await streamUserMessage.yield(.assistantMessageCompleted(
             runtimeHeader(runID: originalID, turnID: turnID, sequence: 3),
             messageID: UUID(),
-            text: "wrong chat"
+            text: "wrong task"
         ))
         await streamUserMessage.finish()
         await sendTask.value
@@ -251,8 +252,8 @@ struct ChatPageInteractorTests {
         #expect(await createRun.calls() == 1)
         #expect(interactor.state.runID == runID)
         #expect(await streamUserMessage.requests() == [
-            ChatInteractorStreamRequest(runID: runID, text: "first"),
-            ChatInteractorStreamRequest(runID: runID, text: "second")
+            ConversationStreamRequest(runID: runID, text: "first"),
+            ConversationStreamRequest(runID: runID, text: "second")
         ])
     }
 
@@ -316,7 +317,7 @@ struct ChatPageInteractorTests {
         await interactor.handleAction(.tapSend)
 
         #expect(await streamUserMessage.requests() == [
-            ChatInteractorStreamRequest(runID: runID, text: "first")
+            ConversationStreamRequest(runID: runID, text: "first")
         ])
         #expect(interactor.state.draftText == "second")
 
@@ -342,7 +343,7 @@ struct ChatPageInteractorTests {
             sessions: [
                 PersistedSession(
                     id: sessionID,
-                    title: "Prior chat",
+                    title: "Prior task",
                     updatedAt: Date(),
                     messages: [
                         RunMessage(role: .user, parts: [.text("hello")], source: .localUser, turnID: UUID())
@@ -362,7 +363,7 @@ struct ChatPageInteractorTests {
         }
 
         #expect(interactor.state.sessionSummaries.first?.id == sessionID)
-        #expect(interactor.state.sessionSummaries.first?.title == "Prior chat")
+        #expect(interactor.state.sessionSummaries.first?.title == "Prior task")
     }
 
     @Test
@@ -384,7 +385,7 @@ struct ChatPageInteractorTests {
             loadSession: sessions
         )
 
-        await interactor.handleAction(.tapChat(sessionID))
+        await interactor.handleAction(.tapTask(sessionID))
 
         #expect(interactor.state.runID == sessionID)
         #expect(interactor.state.messages.map(\.text) == ["saved question", "saved answer"])
@@ -409,7 +410,7 @@ struct ChatPageInteractorTests {
             loadSession: sessions
         )
 
-        await interactor.handleAction(.tapChat(targetID))
+        await interactor.handleAction(.tapTask(targetID))
 
         #expect(interactor.state.runID == targetID)
         #expect(interactor.state.messages.map(\.text) == ["target question"])
@@ -441,7 +442,7 @@ struct ChatPageInteractorTests {
         )
         await interactor.handleAction(.changeDraft("keep me"))
 
-        await interactor.handleAction(.tapChat(sessionID))
+        await interactor.handleAction(.tapTask(sessionID))
 
         #expect(await sessions.loadedCount() == 0)
         #expect(interactor.state.draftText == "keep me")
@@ -450,14 +451,14 @@ struct ChatPageInteractorTests {
 
     @Test
     @MainActor
-    func newChatCreatesPersistedSessionAndClearsTranscript() async throws {
+    func newTaskCreatesPersistedSessionAndClearsTranscript() async throws {
         let existingID = UUID()
         let newID = UUID()
         let sessions = StubSessionUseCase(
             sessions: [
                 PersistedSession(id: existingID, title: "Existing")
             ],
-            createdSession: PersistedSession(id: newID, title: "New Chat")
+            createdSession: PersistedSession(id: newID, title: "New Task")
         )
         let interactor = makeInteractor(
             runID: existingID,
@@ -467,7 +468,7 @@ struct ChatPageInteractorTests {
         )
         await interactor.handleAction(.changeDraft("stale"))
 
-        await interactor.handleAction(.tapNewChat)
+        await interactor.handleAction(.tapNewTask)
 
         #expect(interactor.state.runID == newID)
         #expect(interactor.state.messages.isEmpty)
@@ -477,7 +478,7 @@ struct ChatPageInteractorTests {
 
     @Test
     @MainActor
-    func selectingChatUpdatesNavigationRoute() async throws {
+    func selectingTaskUpdatesNavigationRoute() async throws {
         let currentID = UUID()
         let targetID = UUID()
         let router = Router<AnyRouteInput, AnyModalInput>()
@@ -494,15 +495,15 @@ struct ChatPageInteractorTests {
             router: router
         )
 
-        await interactor.handleAction(.tapChat(targetID))
+        await interactor.handleAction(.tapTask(targetID))
 
-        let route = try #require(try router.path.last?.decode(ChatRouteInput.self))
-        #expect(route.runID == targetID)
+        let route = try #require(try router.path.last?.decode(TaskWorkspaceRouteInput.self))
+        #expect(route.taskID == targetID)
     }
 
     @Test
     @MainActor
-    func newChatUpdatesNavigationRoute() async throws {
+    func newTaskUpdatesNavigationRoute() async throws {
         let existingID = UUID()
         let newID = UUID()
         let router = Router<AnyRouteInput, AnyModalInput>()
@@ -510,7 +511,7 @@ struct ChatPageInteractorTests {
             sessions: [
                 PersistedSession(id: existingID, title: "Existing")
             ],
-            createdSession: PersistedSession(id: newID, title: "New Chat")
+            createdSession: PersistedSession(id: newID, title: "New Task")
         )
         let interactor = makeInteractor(
             runID: existingID,
@@ -519,15 +520,15 @@ struct ChatPageInteractorTests {
             router: router
         )
 
-        await interactor.handleAction(.tapNewChat)
+        await interactor.handleAction(.tapNewTask)
 
-        let route = try #require(try router.path.last?.decode(ChatRouteInput.self))
-        #expect(route.runID == newID)
+        let route = try #require(try router.path.last?.decode(TaskWorkspaceRouteInput.self))
+        #expect(route.taskID == newID)
     }
 
     @Test
     @MainActor
-    func sendFromUnloadableSelectedChatSurfacesErrorWithoutCreatingNewChat() async throws {
+    func sendFromUnloadableSelectedTaskSurfacesErrorWithoutCreatingNewTask() async throws {
         let missingID = UUID()
         let createRun = RecordingCreateRunUseCase(runID: UUID())
         let streamUserMessage = ImmediateStreamUserMessageUseCase()
@@ -551,7 +552,7 @@ struct ChatPageInteractorTests {
 
     @Test
     @MainActor
-    func failedSelectedChatLoadPreservesLoadedSidebarSummaries() async throws {
+    func failedSelectedTaskLoadPreservesLoadedSidebarSummaries() async throws {
         let missingID = UUID()
         let listedID = UUID()
         let sessions = StubSessionUseCase(
@@ -583,7 +584,7 @@ struct ChatPageInteractorTests {
 
     @Test
     @MainActor
-    func failedRouteSendDoesNotUsePreviouslySelectedWorkspaceChat() async throws {
+    func failedRouteSendDoesNotUsePreviouslySelectedWorkspaceTask() async throws {
         let selectedID = UUID()
         let missingID = UUID()
         let sessions = StubSessionUseCase(
@@ -592,13 +593,13 @@ struct ChatPageInteractorTests {
             ]
         )
         let streamUserMessage = ImmediateStreamUserMessageUseCase()
-        let registry = ChatSessionServiceRegistry(
+        let registry = TaskSessionServiceRegistry(
             createRun: RecordingCreateRunUseCase(runID: UUID()),
             streamUserMessage: streamUserMessage,
             loadSession: sessions
         )
-        let workspace = ChatWorkspaceService(registry: registry, listSessions: sessions)
-        await workspace.selectChat(selectedID, force: true)
+        let workspace = TaskWorkspaceService(registry: registry, listSessions: sessions)
+        await workspace.selectTask(selectedID, force: true)
         let interactor = makeInteractor(
             runID: missingID,
             streamUserMessage: streamUserMessage,
@@ -608,7 +609,7 @@ struct ChatPageInteractorTests {
         await interactor.handleAction(.changeDraft("must not go to selected"))
         await interactor.handleAction(.tapSend)
 
-        #expect(workspace.snapshot.selectedChatID == nil)
+        #expect(workspace.snapshot.selectedTaskID == nil)
         #expect(interactor.state.runID == missingID)
         #expect(interactor.state.draftText == "must not go to selected")
         #expect(interactor.state.errorMessage != nil)
@@ -626,19 +627,19 @@ struct ChatPageInteractorTests {
                     id: selectedID,
                     title: "Selected",
                     messages: [
-                        RunMessage(role: .user, parts: [.text("previous chat")], source: .localUser, turnID: UUID())
+                        RunMessage(role: .user, parts: [.text("previous task")], source: .localUser, turnID: UUID())
                     ]
                 )
             ]
         )
         let streamUserMessage = ImmediateStreamUserMessageUseCase()
-        let registry = ChatSessionServiceRegistry(
+        let registry = TaskSessionServiceRegistry(
             createRun: RecordingCreateRunUseCase(runID: UUID()),
             streamUserMessage: streamUserMessage,
             loadSession: sessions
         )
-        let workspace = ChatWorkspaceService(registry: registry, listSessions: sessions)
-        await workspace.selectChat(selectedID, force: true)
+        let workspace = TaskWorkspaceService(registry: registry, listSessions: sessions)
+        await workspace.selectTask(selectedID, force: true)
         let interactor = makeInteractor(
             runID: missingID,
             streamUserMessage: streamUserMessage,
@@ -653,7 +654,7 @@ struct ChatPageInteractorTests {
         #expect(interactor.state.runID == missingID)
         #expect(interactor.state.messages.isEmpty)
         #expect(interactor.state.errorMessage != nil)
-        #expect(workspace.snapshot.selectedChatID == nil)
+        #expect(workspace.snapshot.selectedTaskID == nil)
     }
 
     @Test
@@ -723,19 +724,19 @@ struct ChatPageInteractorTests {
                 )
             ]
         ))
-        let inspector = StubInspectRunUseCase(inspection: inspection)
+        let inspector = StubLoadRunInspectionUseCase(inspection: RunInspectionSnapshot(inspection: inspection))
         let interactor = makeInteractor(
             runID: sessionID,
             streamUserMessage: ImmediateStreamUserMessageUseCase(),
-            inspectRun: inspector
+            loadRunInspection: inspector
         )
 
         await interactor.handleAction(.tapInspector)
 
         #expect(interactor.state.inspector.isPresented)
         #expect(!interactor.state.inspector.isLoading)
-        #expect(interactor.state.inspector.inspection?.orderedEvents.first?.error == "network down")
-        #expect(interactor.state.inspector.inspection?.session.contextTraces.first?.messageLimit == 20)
+        #expect(interactor.state.inspector.inspection?.events.first?.error == "network down")
+        #expect(interactor.state.inspector.inspection?.contextTraces.first?.messageLimit == 20)
     }
 
     @Test
@@ -761,8 +762,8 @@ struct ChatPageInteractorTests {
     func serviceContinuesResponseWithoutSnapshotSubscriber() async throws {
         let runID = UUID()
         let streamUserMessage = ControlledStreamUserMessageUseCase()
-        let service = ChatSessionService(
-            snapshot: ChatSessionSnapshot(id: runID, title: "Detached"),
+        let service = TaskSessionService(
+            snapshot: TaskSessionSnapshot(id: runID, title: "Detached"),
             streamUserMessage: streamUserMessage
         )
 
@@ -792,7 +793,7 @@ struct ChatPageInteractorTests {
     func pageDisappearDetachesWithoutCancellingSelectedService() async throws {
         let runID = UUID()
         let streamUserMessage = ControlledStreamUserMessageUseCase()
-        let registry = ChatSessionServiceRegistry(
+        let registry = TaskSessionServiceRegistry(
             createRun: RecordingCreateRunUseCase(runID: runID),
             streamUserMessage: streamUserMessage
         )
@@ -841,7 +842,7 @@ struct ChatPageInteractorTests {
     func explicitCancelStopsSelectedServiceActiveTurn() async throws {
         let runID = UUID()
         let streamUserMessage = ControlledStreamUserMessageUseCase()
-        let registry = ChatSessionServiceRegistry(
+        let registry = TaskSessionServiceRegistry(
             createRun: RecordingCreateRunUseCase(runID: runID),
             streamUserMessage: streamUserMessage
         )
@@ -878,7 +879,7 @@ struct ChatPageInteractorTests {
                 PersistedSession(id: sessionID, title: "Saved", messages: [user, assistant])
             ]
         )
-        let registry = ChatSessionServiceRegistry(
+        let registry = TaskSessionServiceRegistry(
             createRun: RecordingCreateRunUseCase(runID: UUID()),
             streamUserMessage: ImmediateStreamUserMessageUseCase(),
             loadSession: sessions
@@ -898,8 +899,8 @@ private func makeInteractor(
     runID: UUID?,
     createRun: CreateRunUseCase = RecordingCreateRunUseCase(runID: UUID()),
     streamUserMessage: StreamUserMessageUseCase,
-    sessionRegistry: ChatSessionServiceRegistry? = nil,
-    workspace: ChatWorkspaceService? = nil,
+    sessionRegistry: TaskSessionServiceRegistry? = nil,
+    workspace: TaskWorkspaceService? = nil,
     loadProviderSettings: LoadProviderSettingsUseCase? = nil,
     saveProviderSettings: SaveProviderSettingsUseCase? = nil,
     clearProviderSettings: ClearProviderSettingsUseCase? = nil,
@@ -907,28 +908,28 @@ private func makeInteractor(
     listSessions: ListSessionsUseCase? = nil,
     loadSession: LoadSessionUseCase? = nil,
     createSession: CreateSessionUseCase? = nil,
-    inspectRun: InspectRunUseCase? = nil,
+    loadRunInspection: LoadRunInspectionUseCase? = nil,
     router: Router<AnyRouteInput, AnyModalInput>? = nil
-) -> ChatPageInteractor {
-    let registry = sessionRegistry ?? ChatSessionServiceRegistry(
+) -> TaskWorkspaceInteractor {
+    let registry = sessionRegistry ?? TaskSessionServiceRegistry(
         createRun: createRun,
         streamUserMessage: streamUserMessage,
         loadSession: loadSession,
         createSession: createSession
     )
-    let workspace = workspace ?? ChatWorkspaceService(
+    let workspace = workspace ?? TaskWorkspaceService(
         registry: registry,
         listSessions: listSessions,
         router: router
     )
-    return ChatPageInteractor(
-        input: ChatRouteInput(runID: runID),
+    return TaskWorkspaceInteractor(
+        input: TaskWorkspaceRouteInput(taskID: runID),
         workspace: workspace,
         loadProviderSettings: loadProviderSettings,
         saveProviderSettings: saveProviderSettings,
         clearProviderSettings: clearProviderSettings,
         validateProviderSettings: validateProviderSettings,
-        inspectRun: inspectRun
+        loadRunInspection: loadRunInspection
     )
 }
 
@@ -960,7 +961,7 @@ private func waitUntil(
     Issue.record("Timed out waiting for state transition", sourceLocation: sourceLocation)
 }
 
-private struct ChatInteractorStreamRequest: Equatable, Sendable {
+private struct ConversationStreamRequest: Equatable, Sendable {
     let runID: UUID
     let text: String
 }
@@ -984,13 +985,13 @@ private actor RecordingCreateRunUseCase: CreateRunUseCase {
 }
 
 private actor ImmediateStreamUserMessageUseCase: StreamUserMessageUseCase {
-    private var recordedRequests: [ChatInteractorStreamRequest] = []
+    private var recordedRequests: [ConversationStreamRequest] = []
 
     func streamUserMessage(
         runID: UUID,
         text: String
     ) async throws -> AsyncThrowingStream<RuntimeEvent, Error> {
-        recordedRequests.append(ChatInteractorStreamRequest(runID: runID, text: text))
+        recordedRequests.append(ConversationStreamRequest(runID: runID, text: text))
 
         return AsyncThrowingStream { continuation in
             let turnID = UUID()
@@ -1008,7 +1009,7 @@ private actor ImmediateStreamUserMessageUseCase: StreamUserMessageUseCase {
         }
     }
 
-    func requests() -> [ChatInteractorStreamRequest] {
+    func requests() -> [ConversationStreamRequest] {
         recordedRequests
     }
 }
@@ -1016,7 +1017,7 @@ private actor ImmediateStreamUserMessageUseCase: StreamUserMessageUseCase {
 private actor ControlledStreamUserMessageUseCase: StreamUserMessageUseCase {
     private typealias Continuation = AsyncThrowingStream<RuntimeEvent, Error>.Continuation
 
-    private var recordedRequests: [ChatInteractorStreamRequest] = []
+    private var recordedRequests: [ConversationStreamRequest] = []
     private var continuation: Continuation?
     private var requestWaiters: [CheckedContinuation<Void, Never>] = []
     private var streamWaiters: [CheckedContinuation<Void, Never>] = []
@@ -1027,7 +1028,7 @@ private actor ControlledStreamUserMessageUseCase: StreamUserMessageUseCase {
         runID: UUID,
         text: String
     ) async throws -> AsyncThrowingStream<RuntimeEvent, Error> {
-        recordedRequests.append(ChatInteractorStreamRequest(runID: runID, text: text))
+        recordedRequests.append(ConversationStreamRequest(runID: runID, text: text))
         resumeRequestWaiters()
 
         return AsyncThrowingStream { continuation in
@@ -1075,7 +1076,7 @@ private actor ControlledStreamUserMessageUseCase: StreamUserMessageUseCase {
         }
     }
 
-    func requests() -> [ChatInteractorStreamRequest] {
+    func requests() -> [ConversationStreamRequest] {
         recordedRequests
     }
 
@@ -1115,7 +1116,7 @@ private actor StubSessionUseCase: ListSessionsUseCase, LoadSessionUseCase, Creat
 
     init(
         sessions: [PersistedSession],
-        createdSession: PersistedSession = PersistedSession(title: "New Chat")
+        createdSession: PersistedSession = PersistedSession(title: "New Task")
     ) {
         self.sessions = sessions
         self.createdSession = createdSession
@@ -1197,14 +1198,14 @@ private actor StubProviderSettingsUseCase:
     }
 }
 
-private actor StubInspectRunUseCase: InspectRunUseCase {
-    private let inspection: PersistedRunInspection
+private actor StubLoadRunInspectionUseCase: LoadRunInspectionUseCase {
+    private let inspection: RunInspectionSnapshot
 
-    init(inspection: PersistedRunInspection) {
+    init(inspection: RunInspectionSnapshot) {
         self.inspection = inspection
     }
 
-    func inspectRun(sessionID: UUID) async throws -> PersistedRunInspection {
+    func loadRunInspection(runID: UUID) async throws -> RunInspectionSnapshot {
         inspection
     }
 }

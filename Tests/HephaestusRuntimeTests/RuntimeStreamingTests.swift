@@ -1,11 +1,11 @@
 import Anvil
-import ChatContracts
-import ChatFeature
 import Foundation
 import HephaestusComposition
 import HephaestusKernel
 import HephaestusLLM
 import HephaestusRuntime
+import TaskWorkspaceFeature
+import TaskWorkspaceContracts
 import Testing
 
 @Suite
@@ -127,12 +127,12 @@ struct RuntimeStreamingTests {
     }
 
     @Test
-    func invalidChatRunIDDeepLinkIsRejected() throws {
+    func invalidTaskIDDeepLinkIsRejected() throws {
         let registry = try DestinationRegistry(
-            routes: [ChatRoutes.registration],
+            routes: [TaskWorkspaceRoutes.registration],
             modals: []
         )
-        let url = try #require(URL(string: "hephaestus://route/hephaestus.chat.main?runID=bad"))
+        let url = try #require(URL(string: "hephaestus://route/hephaestus.task.workspace?taskID=bad"))
 
         #expect(throws: DestinationRegistryError.unsupportedDeepLink(url)) {
             _ = try registry.decodeDeepLink(url)
@@ -141,37 +141,37 @@ struct RuntimeStreamingTests {
 
     @Test
     @MainActor
-    func chatRouteRequiresChatWorkspaceService() throws {
+    func taskWorkspaceRouteRequiresWorkspaceService() throws {
         let registry = try DestinationRegistry(
-            routes: [ChatRoutes.registration],
+            routes: [TaskWorkspaceRoutes.registration],
             modals: []
         )
-        let input = try AnyRouteInput(ChatRouteInput(runID: nil))
+        let input = try AnyRouteInput(TaskWorkspaceRouteInput(taskID: nil))
         let context = RouteBuildContext(router: Router<AnyRouteInput, AnyModalInput>()) { type in
             throw RouteBuildError.missingDependency(String(describing: type))
         }
 
-        #expect(throws: RouteBuildError.missingDependency("ChatWorkspaceService")) {
+        #expect(throws: RouteBuildError.missingDependency("TaskWorkspaceService")) {
             _ = try registry.buildRoute(input, context: context)
         }
     }
 
     @Test
     @MainActor
-    func chatRouteBuildsWithWorkspaceServiceAndNoSessionRegistryDependency() throws {
+    func taskWorkspaceRouteBuildsWithWorkspaceServiceAndNoSessionRegistryDependency() throws {
         let registry = try DestinationRegistry(
-            routes: [ChatRoutes.registration],
+            routes: [TaskWorkspaceRoutes.registration],
             modals: []
         )
-        let input = try AnyRouteInput(ChatRouteInput(runID: nil))
-        let workspace = ChatWorkspaceService(
-            registry: ChatSessionServiceRegistry(
+        let input = try AnyRouteInput(TaskWorkspaceRouteInput(taskID: nil))
+        let workspace = TaskWorkspaceService(
+            registry: TaskSessionServiceRegistry(
                 createRun: BlockingCreateRunUseCase(runID: UUID()),
                 streamUserMessage: RecordingStreamUserMessageUseCase()
             )
         )
         let context = RouteBuildContext(router: Router<AnyRouteInput, AnyModalInput>()) { type in
-            if type == ChatWorkspaceService.self {
+            if type == TaskWorkspaceService.self {
                 return workspace
             }
             throw RouteBuildError.missingDependency(String(describing: type))
@@ -186,13 +186,13 @@ struct RuntimeStreamingTests {
         let runID = UUID()
         let createRun = BlockingCreateRunUseCase(runID: runID)
         let streamUserMessage = RecordingStreamUserMessageUseCase()
-        let sessionRegistry = ChatSessionServiceRegistry(
+        let sessionRegistry = TaskSessionServiceRegistry(
             createRun: createRun,
             streamUserMessage: streamUserMessage
         )
-        let workspace = ChatWorkspaceService(registry: sessionRegistry)
-        let interactor = ChatPageInteractor(
-            input: ChatRouteInput(runID: nil),
+        let workspace = TaskWorkspaceService(registry: sessionRegistry)
+        let interactor = TaskWorkspaceInteractor(
+            input: TaskWorkspaceRouteInput(taskID: nil),
             workspace: workspace
         )
 
@@ -219,13 +219,13 @@ struct RuntimeStreamingTests {
     func tapSendIgnoresEmptyDraft() async throws {
         let createRun = BlockingCreateRunUseCase(runID: UUID())
         let streamUserMessage = RecordingStreamUserMessageUseCase()
-        let sessionRegistry = ChatSessionServiceRegistry(
+        let sessionRegistry = TaskSessionServiceRegistry(
             createRun: createRun,
             streamUserMessage: streamUserMessage
         )
-        let workspace = ChatWorkspaceService(registry: sessionRegistry)
-        let interactor = ChatPageInteractor(
-            input: ChatRouteInput(runID: nil),
+        let workspace = TaskWorkspaceService(registry: sessionRegistry)
+        let interactor = TaskWorkspaceInteractor(
+            input: TaskWorkspaceRouteInput(taskID: nil),
             workspace: workspace
         )
 
@@ -244,13 +244,13 @@ struct RuntimeStreamingTests {
         let runID = UUID()
         let createRun = BlockingCreateRunUseCase(runID: runID)
         let streamUserMessage = RecordingStreamUserMessageUseCase()
-        let sessionRegistry = ChatSessionServiceRegistry(
+        let sessionRegistry = TaskSessionServiceRegistry(
             createRun: createRun,
             streamUserMessage: streamUserMessage
         )
-        let workspace = ChatWorkspaceService(registry: sessionRegistry)
-        let interactor = ChatPageInteractor(
-            input: ChatRouteInput(runID: nil),
+        let workspace = TaskWorkspaceService(registry: sessionRegistry)
+        let interactor = TaskWorkspaceInteractor(
+            input: TaskWorkspaceRouteInput(taskID: nil),
             workspace: workspace
         )
 
