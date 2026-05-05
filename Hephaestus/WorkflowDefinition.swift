@@ -6,6 +6,7 @@ struct WorkflowDefinition: Identifiable, Equatable {
     let subtitle: String
     let kind: WorkflowKind
     let steps: [WorkflowStepDefinition]
+    let inputs: [WorkflowInputDefinition]
     let externalPackagePath: String?
     let externalEntryName: String?
 
@@ -14,6 +15,7 @@ struct WorkflowDefinition: Identifiable, Equatable {
         title: "Create and delete HelloWorld.txt",
         subtitle: "Runs two headless Codex CLI steps in the selected folder.",
         kind: .helloWorld,
+        inputs: [],
         externalPackagePath: nil,
         externalEntryName: nil,
         steps: [
@@ -35,6 +37,7 @@ struct WorkflowDefinition: Identifiable, Equatable {
         title: "Implementation Review Loop",
         subtitle: "Implements a markdown plan, builds, and loops through two reviewers.",
         kind: .implementationReviewLoop,
+        inputs: [],
         externalPackagePath: nil,
         externalEntryName: nil,
         steps: [
@@ -66,6 +69,7 @@ struct WorkflowDefinition: Identifiable, Equatable {
         title: String,
         subtitle: String,
         kind: WorkflowKind,
+        inputs: [WorkflowInputDefinition] = [],
         externalPackagePath: String? = nil,
         externalEntryName: String? = nil,
         steps: [WorkflowStepDefinition]
@@ -74,6 +78,7 @@ struct WorkflowDefinition: Identifiable, Equatable {
         self.title = title
         self.subtitle = subtitle
         self.kind = kind
+        self.inputs = inputs
         self.externalPackagePath = externalPackagePath
         self.externalEntryName = externalEntryName
         self.steps = steps
@@ -85,6 +90,7 @@ struct WorkflowDefinition: Identifiable, Equatable {
             title: description.name,
             subtitle: description.summary,
             kind: .externalSwiftPackage,
+            inputs: description.inputs,
             externalPackagePath: packageURL.path,
             externalEntryName: entryName,
             steps: description.steps.map {

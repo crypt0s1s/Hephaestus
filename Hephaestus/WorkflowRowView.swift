@@ -9,6 +9,8 @@ struct WorkflowRow: View {
     let lastRunSucceeded: Bool?
     @Binding var implementationPlanPath: String
     @Binding var implementationBuildCommand: String
+    let externalInputValues: [String: String]
+    let updateExternalInput: (String, String) -> Void
     let toggleExpansion: () -> Void
     let run: () -> Void
     @Environment(\.anvilTheme) private var theme
@@ -29,7 +31,9 @@ struct WorkflowRow: View {
                 WorkflowExpandedContent(
                     workflow: workflow,
                     planPath: $implementationPlanPath,
-                    buildCommand: $implementationBuildCommand
+                    buildCommand: $implementationBuildCommand,
+                    externalInputValues: externalInputValues,
+                    updateExternalInput: updateExternalInput
                 )
             }
         }
@@ -184,6 +188,8 @@ private struct WorkflowExpandedContent: View {
     let workflow: WorkflowDefinition
     @Binding var planPath: String
     @Binding var buildCommand: String
+    let externalInputValues: [String: String]
+    let updateExternalInput: (String, String) -> Void
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
@@ -204,6 +210,38 @@ private struct WorkflowExpandedContent: View {
                 planPath: $planPath,
                 buildCommand: $buildCommand
             )
+        } else if workflow.kind == .externalSwiftPackage, !workflow.inputs.isEmpty {
+            ExternalWorkflowConfiguration(
+                inputs: workflow.inputs,
+                values: externalInputValues,
+                updateInput: updateExternalInput
+            )
+        }
+    }
+}
+
+private struct ExternalWorkflowConfiguration: View {
+    let inputs: [WorkflowInputDefinition]
+    let values: [String: String]
+    let updateInput: (String, String) -> Void
+    @Environment(\.anvilTheme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.small) {
+            Text("Inputs")
+                .font(theme.typography.caption)
+                .foregroundStyle(theme.colors.textSecondary)
+
+            ForEach(inputs, id: \.id) { input in
+                WorkflowInputField(
+                    placeholder: input.label,
+                    text: Binding(
+                        get: { values[input.id] ?? input.defaultValue ?? "" },
+                        set: { updateInput(input.id, $0) }
+                    ),
+                    accessibilityLabel: input.label
+                )
+            }
         }
     }
 }

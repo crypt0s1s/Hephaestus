@@ -1,6 +1,6 @@
 import Foundation
 
-struct WorkflowDescription: Codable, Equatable {
+nonisolated struct WorkflowDescription: Codable, Equatable {
     let id: String
     let name: String
     let version: String
@@ -9,25 +9,25 @@ struct WorkflowDescription: Codable, Equatable {
     let steps: [WorkflowStepDescription]
 }
 
-struct WorkflowInputDefinition: Codable, Equatable {
+nonisolated struct WorkflowInputDefinition: Codable, Equatable {
     let id: String
     let type: String
     let label: String
     let defaultValue: String?
 }
 
-struct WorkflowStepDescription: Codable, Equatable {
+nonisolated struct WorkflowStepDescription: Codable, Equatable {
     let id: String
     let title: String
     let summary: String
 }
 
-struct WorkflowRunInput: Codable, Equatable {
+nonisolated struct WorkflowRunInput: Codable, Equatable {
     let projectPath: String
     let values: [String: String]
 }
 
-struct ExternalWorkflowEvent: Codable, Equatable {
+nonisolated struct ExternalWorkflowEvent: Codable, Equatable {
     let type: ExternalWorkflowEventType
     let stepID: String?
     let title: String?
@@ -35,7 +35,7 @@ struct ExternalWorkflowEvent: Codable, Equatable {
     let summary: String?
 }
 
-enum ExternalWorkflowEventType: String, Codable, Equatable {
+nonisolated enum ExternalWorkflowEventType: String, Codable, Equatable {
     case workflowStarted
     case workflowFinished
     case stepStarted
@@ -43,14 +43,14 @@ enum ExternalWorkflowEventType: String, Codable, Equatable {
     case logChunk
 }
 
-enum ExternalWorkflowEventStatus: String, Codable, Equatable {
+nonisolated enum ExternalWorkflowEventStatus: String, Codable, Equatable {
     case pending
     case inProgress
     case succeeded
     case failed
 }
 
-struct ExternalWorkflowManifest: Equatable {
+nonisolated struct ExternalWorkflowManifest: Equatable {
     let id: String
     let name: String
     let version: String

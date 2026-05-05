@@ -182,6 +182,14 @@ private struct WorkflowDetail: View {
                                     get: { model.state.implementationBuildCommand },
                                     set: { model.updateImplementationBuildCommand($0) }
                                 ),
+                                externalInputValues: model.state.externalWorkflowInputValues[workflow.id] ?? [:],
+                                updateExternalInput: { inputID, value in
+                                    model.updateExternalWorkflowInput(
+                                        workflowID: workflow.id,
+                                        inputID: inputID,
+                                        value: value
+                                    )
+                                },
                                 toggleExpansion: {
                                     model.toggleWorkflowExpansion(workflow)
                                 },

@@ -4,6 +4,7 @@ struct ExternalWorkflowRunner {
     func run(
         workflow: WorkflowDefinition,
         project: WorkflowProject,
+        inputValues: [String: String] = [:],
         progress: WorkflowProgressHandler? = nil
     ) async -> ProcessResult {
         guard let packagePath = workflow.externalPackagePath else {
@@ -11,12 +12,12 @@ struct ExternalWorkflowRunner {
         }
 
         let debugLog = WorkflowDebugLog(projectName: "\(project.name)-external-workflow")
-        let runInput = WorkflowRunInput(projectPath: project.path, values: [:])
+        let runInput = WorkflowRunInput(projectPath: project.path, values: inputValues)
         guard let inputURL = try? writeRunInput(runInput) else {
             return ProcessResult(exitCode: 1, output: "Could not write workflow run input.")
         }
 
-        let recorder = ExternalWorkflowProgressRecorder(debugLogURL: await debugLog.fileURL)
+        let recorder = ExternalWorkflowProgressRecorder(debugLogURL: debugLog.fileURL)
         await recorder.record(
             ExternalWorkflowEvent(
                 type: .workflowStarted,
@@ -194,7 +195,7 @@ private extension WorkflowStepRecordStatus {
     }
 }
 
-private final class ExternalWorkflowProcessState: @unchecked Sendable {
+private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendable {
     private let process: Process
     private let pipe: Pipe
     private let debugLog: WorkflowDebugLog
@@ -221,7 +222,7 @@ private final class ExternalWorkflowProcessState: @unchecked Sendable {
         self.continuation = continuation
     }
 
-    nonisolated func consume(_ data: Data) {
+    func consume(_ data: Data) {
         guard let chunk = String(data: data, encoding: .utf8) else { return }
         lock.withLock {
             output.append(chunk)
@@ -239,7 +240,7 @@ private final class ExternalWorkflowProcessState: @unchecked Sendable {
         }
     }
 
-    nonisolated func finish(exitCode: Int32, errorOutput: String? = nil) {
+    func finish(exitCode: Int32, errorOutput: String? = nil) {
         let result: ProcessResult? = lock.withLock {
             guard !didResume else { return nil }
             didResume = true
@@ -265,7 +266,7 @@ private final class ExternalWorkflowProcessState: @unchecked Sendable {
         }
     }
 
-    nonisolated func timeout() {
+    func timeout() {
         lock.withLock {
             guard !didResume, process.isRunning else { return }
             process.terminate()
@@ -273,14 +274,14 @@ private final class ExternalWorkflowProcessState: @unchecked Sendable {
         finish(exitCode: 124, errorOutput: "\nExternal workflow timed out after 120 seconds.")
     }
 
-    private nonisolated func replayEvents(from output: String) async {
+    private func replayEvents(from output: String) async {
         for line in output.split(separator: "\n") {
             guard let event = decodeEvent(String(line)) else { continue }
             await recorder.record(event)
         }
     }
 
-    private nonisolated func decodeEvent(_ line: String) -> ExternalWorkflowEvent? {
+    private func decodeEvent(_ line: String) -> ExternalWorkflowEvent? {
         guard let data = line.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(ExternalWorkflowEvent.self, from: data)
     }

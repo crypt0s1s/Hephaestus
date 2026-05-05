@@ -10,6 +10,7 @@ struct WorkflowRunnerState: Equatable {
     var expandedWorkflowIDs: Set<WorkflowDefinition.ID> = [WorkflowDefinition.implementationReviewLoop.id]
     var implementationPlanPath = ""
     var implementationBuildCommand = "swift build"
+    var externalWorkflowInputValues: [WorkflowDefinition.ID: [String: String]] = [:]
     var isRunning = false
     var activeWorkflowID: WorkflowDefinition.ID?
     var statusMessage: String?
@@ -142,6 +143,14 @@ final class WorkflowRunnerModel: ObservableObject {
         update { $0.implementationBuildCommand = command }
     }
 
+    func updateExternalWorkflowInput(workflowID: WorkflowDefinition.ID, inputID: String, value: String) {
+        update {
+            var values = $0.externalWorkflowInputValues[workflowID, default: [:]]
+            values[inputID] = value
+            $0.externalWorkflowInputValues[workflowID] = values
+        }
+    }
+
     func runWorkflow(_ workflow: WorkflowDefinition) {
         switch workflow.kind {
         case .helloWorld:
@@ -248,6 +257,7 @@ final class WorkflowRunnerModel: ObservableObject {
             let result = await externalWorkflowRunner.run(
                 workflow: workflow,
                 project: project,
+                inputValues: state.externalWorkflowInputValues[workflow.id] ?? [:],
                 progress: { [weak model = self] progress in
                     await model?.applyWorkflowProgress(progress)
                 }
@@ -275,6 +285,13 @@ final class WorkflowRunnerModel: ObservableObject {
             $0.workflows.removeAll { $0.kind == .externalSwiftPackage }
             $0.workflows.append(contentsOf: externalWorkflows)
             $0.expandedWorkflowIDs.formUnion(externalWorkflows.map(\.id))
+            for workflow in externalWorkflows {
+                let defaults = Self.defaultInputValues(for: workflow)
+                $0.externalWorkflowInputValues[workflow.id] = defaults.merging(
+                    $0.externalWorkflowInputValues[workflow.id] ?? [:],
+                    uniquingKeysWith: { _, current in current }
+                )
+            }
         }
     }
 
@@ -308,5 +325,11 @@ final class WorkflowRunnerModel: ObservableObject {
             return nil
         }
         return WorkflowProject(url: URL(fileURLWithPath: path, isDirectory: true), bookmarkData: nil)
+    }
+
+    private static func defaultInputValues(for workflow: WorkflowDefinition) -> [String: String] {
+        Dictionary(uniqueKeysWithValues: workflow.inputs.map {
+            ($0.id, $0.defaultValue ?? "")
+        })
     }
 }

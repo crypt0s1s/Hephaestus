@@ -30,6 +30,11 @@ struct WorkflowEvent: Codable {
     let summary: String?
 }
 
+struct WorkflowRunInput: Codable {
+    let projectPath: String
+    let values: [String: String]
+}
+
 let description = WorkflowDescription(
     id: "external-implementation-review-example",
     name: "External Implementation Review Example",
@@ -69,10 +74,13 @@ do {
     case "validate":
         try writeJSON(["status": "ok"])
     case "run":
+        let input = try loadRunInput()
+        let planPath = input.values["planPath"] ?? "unspecified plan"
+        let buildCommand = input.values["buildCommand"] ?? "unspecified build"
         emit(WorkflowEvent(type: "workflowStarted", stepID: nil, title: description.name, status: "inProgress", summary: "External workflow process started."))
-        emit(WorkflowEvent(type: "stepStarted", stepID: "implement", title: "Implement plan", status: "inProgress", summary: "Fake implementer started."))
+        emit(WorkflowEvent(type: "stepStarted", stepID: "implement", title: "Implement plan", status: "inProgress", summary: "Fake implementer started for \(planPath)."))
         emit(WorkflowEvent(type: "stepFinished", stepID: "implement", title: "Implement plan", status: "succeeded", summary: "Fake implementer finished."))
-        emit(WorkflowEvent(type: "stepStarted", stepID: "build", title: "Build", status: "inProgress", summary: "Fake build started."))
+        emit(WorkflowEvent(type: "stepStarted", stepID: "build", title: "Build", status: "inProgress", summary: "Fake build started: \(buildCommand)."))
         emit(WorkflowEvent(type: "stepFinished", stepID: "build", title: "Build", status: "succeeded", summary: "Fake build passed."))
         emit(WorkflowEvent(type: "stepStarted", stepID: "review-a", title: "Reviewer A", status: "inProgress", summary: "Reviewer A started."))
         emit(WorkflowEvent(type: "stepStarted", stepID: "review-b", title: "Reviewer B", status: "inProgress", summary: "Reviewer B started."))
@@ -87,4 +95,14 @@ do {
 } catch {
     fputs(String(describing: error), stderr)
     exit(1)
+}
+
+func loadRunInput() throws -> WorkflowRunInput {
+    guard let inputFlagIndex = CommandLine.arguments.firstIndex(of: "--input"),
+          CommandLine.arguments.indices.contains(inputFlagIndex + 1) else {
+        return WorkflowRunInput(projectPath: FileManager.default.currentDirectoryPath, values: [:])
+    }
+    let inputURL = URL(fileURLWithPath: CommandLine.arguments[inputFlagIndex + 1])
+    let data = try Data(contentsOf: inputURL)
+    return try JSONDecoder().decode(WorkflowRunInput.self, from: data)
 }

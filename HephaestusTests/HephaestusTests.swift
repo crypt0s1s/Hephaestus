@@ -182,7 +182,7 @@ struct WorkflowRunnerTests {
         )
         let descriptionOutput = """
         Building for debugging...
-        {"id":"external-implementation-review-example","name":"External Implementation Review Example","version":"0.1.0","summary":"Fake workflow","inputs":[],"steps":[{"id":"implement","title":"Implement plan","summary":"Apply a plan."}]}
+        {"id":"external-implementation-review-example","name":"External Implementation Review Example","version":"0.1.0","summary":"Fake workflow","inputs":[{"id":"planPath","type":"string","label":"Plan path","defaultValue":"docs/plans/demo.md"}],"steps":[{"id":"implement","title":"Implement plan","summary":"Apply a plan."}]}
         """
         let runner = RecordingProcessRunner(results: [
             ProcessResult(exitCode: 0, output: descriptionOutput)
@@ -199,6 +199,8 @@ struct WorkflowRunnerTests {
         #expect(workflows.first?.kind == .externalSwiftPackage)
         #expect(workflows.first?.externalPackagePath == packageURL.path)
         #expect(workflows.first?.externalEntryName == "ImplementationReviewWorkflow")
+        #expect(workflows.first?.inputs.map(\.id) == ["planPath"])
+        #expect(workflows.first?.inputs.first?.defaultValue == "docs/plans/demo.md")
         #expect(workflows.first?.steps.map(\.id) == ["implement"])
         let call = runner.recordedCalls().first
         #expect(call?.arguments.contains("--package-path") == true)
