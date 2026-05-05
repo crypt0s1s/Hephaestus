@@ -8,7 +8,7 @@ struct ProcessResult: Equatable {
     let timedOut: Bool
     let stepRecords: [WorkflowStepRecord]
 
-    init(
+    nonisolated init(
         exitCode: Int32,
         output: String,
         timeline: String = "",
@@ -30,7 +30,7 @@ struct WorkflowRunProgress: Equatable {
     let debugLogURL: URL?
     let stepRecords: [WorkflowStepRecord]
 
-    init(timeline: String, debugLogURL: URL?, stepRecords: [WorkflowStepRecord] = []) {
+    nonisolated init(timeline: String, debugLogURL: URL?, stepRecords: [WorkflowStepRecord] = []) {
         self.timeline = timeline
         self.debugLogURL = debugLogURL
         self.stepRecords = stepRecords

@@ -6,12 +6,16 @@ struct WorkflowDefinition: Identifiable, Equatable {
     let subtitle: String
     let kind: WorkflowKind
     let steps: [WorkflowStepDefinition]
+    let externalPackagePath: String?
+    let externalEntryName: String?
 
     static let helloWorld = WorkflowDefinition(
         id: "hello-world",
         title: "Create and delete HelloWorld.txt",
         subtitle: "Runs two headless Codex CLI steps in the selected folder.",
         kind: .helloWorld,
+        externalPackagePath: nil,
+        externalEntryName: nil,
         steps: [
             WorkflowStepDefinition(
                 id: "create-hello-world",
@@ -31,6 +35,8 @@ struct WorkflowDefinition: Identifiable, Equatable {
         title: "Implementation Review Loop",
         subtitle: "Implements a markdown plan, builds, and loops through two reviewers.",
         kind: .implementationReviewLoop,
+        externalPackagePath: nil,
+        externalEntryName: nil,
         steps: [
             WorkflowStepDefinition(
                 id: "implement-plan",
@@ -54,11 +60,44 @@ struct WorkflowDefinition: Identifiable, Equatable {
             )
         ]
     )
+
+    init(
+        id: String,
+        title: String,
+        subtitle: String,
+        kind: WorkflowKind,
+        externalPackagePath: String? = nil,
+        externalEntryName: String? = nil,
+        steps: [WorkflowStepDefinition]
+    ) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.kind = kind
+        self.externalPackagePath = externalPackagePath
+        self.externalEntryName = externalEntryName
+        self.steps = steps
+    }
+
+    init(externalDescription description: WorkflowDescription, packageURL: URL, entryName: String) {
+        self.init(
+            id: description.id,
+            title: description.name,
+            subtitle: description.summary,
+            kind: .externalSwiftPackage,
+            externalPackagePath: packageURL.path,
+            externalEntryName: entryName,
+            steps: description.steps.map {
+                WorkflowStepDefinition(id: $0.id, title: $0.title, subtitle: $0.summary)
+            }
+        )
+    }
 }
 
 enum WorkflowKind: Equatable {
     case helloWorld
     case implementationReviewLoop
+    case externalSwiftPackage
 }
 
 struct WorkflowStepDefinition: Identifiable, Equatable {

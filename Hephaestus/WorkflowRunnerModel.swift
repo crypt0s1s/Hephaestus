@@ -42,13 +42,19 @@ final class WorkflowRunnerModel: ObservableObject {
     private let projectPicker: ProjectPicker
     private let branchReader: GitBranchReader
     private let workflowRunner: HeadlessCodexWorkflowRunner
+    private let externalWorkflowDiscovery: ExternalWorkflowDiscovery
+    private let externalWorkflowRunner: ExternalWorkflowRunner
+    private let environment: [String: String]
 
     convenience init() {
         self.init(
             projectStore: UserDefaultsProjectStore(),
             projectPicker: NSOpenPanelProjectPicker(),
             branchReader: GitBranchReader(),
-            workflowRunner: HeadlessCodexWorkflowRunner()
+            workflowRunner: HeadlessCodexWorkflowRunner(),
+            externalWorkflowDiscovery: ExternalWorkflowDiscovery(),
+            externalWorkflowRunner: ExternalWorkflowRunner(),
+            environment: ProcessInfo.processInfo.environment
         )
     }
 
@@ -56,24 +62,36 @@ final class WorkflowRunnerModel: ObservableObject {
         projectStore: ProjectStore,
         projectPicker: ProjectPicker,
         branchReader: GitBranchReader,
-        workflowRunner: HeadlessCodexWorkflowRunner
+        workflowRunner: HeadlessCodexWorkflowRunner,
+        externalWorkflowDiscovery: ExternalWorkflowDiscovery,
+        externalWorkflowRunner: ExternalWorkflowRunner,
+        environment: [String: String]
     ) {
         self.projectStore = projectStore
         self.projectPicker = projectPicker
         self.branchReader = branchReader
         self.workflowRunner = workflowRunner
+        self.externalWorkflowDiscovery = externalWorkflowDiscovery
+        self.externalWorkflowRunner = externalWorkflowRunner
+        self.environment = environment
 
         let snapshot = projectStore.load()
         var initialState = WorkflowRunnerState(
             projects: snapshot.projects,
             selectedProjectID: snapshot.selectedProjectID
         )
+        if let environmentProject = Self.environmentProject(environment: environment) {
+            initialState.projects.removeAll { $0.id == environmentProject.id }
+            initialState.projects.insert(environmentProject, at: 0)
+            initialState.selectedProjectID = environmentProject.id
+        }
         if initialState.selectedProjectID == nil {
             initialState.selectedProjectID = initialState.projects.first?.id
         }
         state = initialState
 
         Task { await refreshBranches() }
+        Task { await discoverExternalWorkflows() }
     }
 
     func selectProject(_ project: WorkflowProject) {
@@ -130,6 +148,8 @@ final class WorkflowRunnerModel: ObservableObject {
             runHelloWorldWorkflow()
         case .implementationReviewLoop:
             runImplementationReviewLoop()
+        case .externalSwiftPackage:
+            runExternalWorkflow(workflow)
         }
     }
 
@@ -190,14 +210,8 @@ final class WorkflowRunnerModel: ObservableObject {
             let result = await workflowRunner.runImplementationReviewLoop(
                 in: project,
                 request: request,
-                progress: { [weak self] progress in
-                    await MainActor.run {
-                        self?.update {
-                            $0.timelineOutput = progress.timeline
-                            $0.debugLogURL = progress.debugLogURL
-                            $0.stepRecords = progress.stepRecords
-                        }
-                    }
+                progress: { [weak model = self] progress in
+                    await model?.applyWorkflowProgress(progress)
                 }
             )
             update {
@@ -216,9 +230,65 @@ final class WorkflowRunnerModel: ObservableObject {
         }
     }
 
+    private func runExternalWorkflow(_ workflow: WorkflowDefinition) {
+        guard let project = state.selectedProject else { return }
+
+        update {
+            $0.isRunning = true
+            $0.activeWorkflowID = workflow.id
+            $0.statusMessage = "Running \(workflow.title)..."
+            $0.timelineOutput = "External workflow started: \(workflow.title)"
+            $0.stepRecords = []
+            $0.output = ""
+            $0.debugLogURL = nil
+            $0.lastRunSucceeded = nil
+        }
+
+        Task {
+            let result = await externalWorkflowRunner.run(
+                workflow: workflow,
+                project: project,
+                progress: { [weak model = self] progress in
+                    await model?.applyWorkflowProgress(progress)
+                }
+            )
+            update {
+                $0.output = result.output
+                $0.debugLogURL = result.debugLogURL
+                $0.stepRecords = result.stepRecords
+                $0.timelineOutput = result.timeline.isEmpty ? result.output : result.timeline
+                $0.isRunning = false
+                $0.activeWorkflowID = nil
+                $0.lastRunWorkflowID = workflow.id
+                $0.lastRunSucceeded = result.exitCode == 0
+                $0.statusMessage = result.exitCode == 0
+                    ? "\(workflow.title) completed for \(project.name)."
+                    : "\(workflow.title) failed with exit code \(result.exitCode)."
+            }
+        }
+    }
+
+    private func discoverExternalWorkflows() async {
+        let externalWorkflows = await externalWorkflowDiscovery.discoverWorkflows()
+        guard !externalWorkflows.isEmpty else { return }
+        update {
+            $0.workflows.removeAll { $0.kind == .externalSwiftPackage }
+            $0.workflows.append(contentsOf: externalWorkflows)
+            $0.expandedWorkflowIDs.formUnion(externalWorkflows.map(\.id))
+        }
+    }
+
     private func refreshBranches() async {
         for project in state.projects {
             await refreshBranch(for: project)
+        }
+    }
+
+    private func applyWorkflowProgress(_ progress: WorkflowRunProgress) {
+        update {
+            $0.timelineOutput = progress.timeline
+            $0.debugLogURL = progress.debugLogURL
+            $0.stepRecords = progress.stepRecords
         }
     }
 
@@ -231,5 +301,12 @@ final class WorkflowRunnerModel: ObservableObject {
 
     private func update(_ mutate: (inout WorkflowRunnerState) -> Void) {
         mutate(&state)
+    }
+
+    private static func environmentProject(environment: [String: String]) -> WorkflowProject? {
+        guard let path = environment["HEPHAESTUS_WORKFLOW_PROJECT_PATH"], !path.isEmpty else {
+            return nil
+        }
+        return WorkflowProject(url: URL(fileURLWithPath: path, isDirectory: true), bookmarkData: nil)
     }
 }

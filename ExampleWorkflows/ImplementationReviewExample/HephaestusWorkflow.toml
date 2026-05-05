@@ -1,0 +1,5 @@
+id = "external-implementation-review-example"
+name = "External Implementation Review Example"
+version = "0.1.0"
+runtime = "swift-package"
+entry = "ImplementationReviewWorkflow"

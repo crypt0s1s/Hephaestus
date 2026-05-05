@@ -165,6 +165,47 @@ struct WorkflowRunnerTests {
         #expect(codexPrompts[3].contains("reported blocking findings"))
         #expect(codexPrompts[3].contains("P2: missing test"))
     }
+
+    @Test
+    func externalWorkflowDiscoveryLoadsSwiftPackageManifestAndDescription() async throws {
+        let packageURL = try makeTemporaryProject()
+        try """
+        id = "external-implementation-review-example"
+        name = "External Implementation Review Example"
+        version = "0.1.0"
+        runtime = "swift-package"
+        entry = "ImplementationReviewWorkflow"
+        """.write(
+            to: packageURL.appendingPathComponent("HephaestusWorkflow.toml"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let descriptionOutput = """
+        Building for debugging...
+        {"id":"external-implementation-review-example","name":"External Implementation Review Example","version":"0.1.0","summary":"Fake workflow","inputs":[],"steps":[{"id":"implement","title":"Implement plan","summary":"Apply a plan."}]}
+        """
+        let runner = RecordingProcessRunner(results: [
+            ProcessResult(exitCode: 0, output: descriptionOutput)
+        ])
+        let discovery = ExternalWorkflowDiscovery(
+            environment: ["HEPHAESTUS_EXTERNAL_WORKFLOW_ROOT": packageURL.path],
+            processRunner: runner
+        )
+
+        let workflows = await discovery.discoverWorkflows()
+
+        #expect(workflows.count == 1)
+        #expect(workflows.first?.id == "external-implementation-review-example")
+        #expect(workflows.first?.kind == .externalSwiftPackage)
+        #expect(workflows.first?.externalPackagePath == packageURL.path)
+        #expect(workflows.first?.externalEntryName == "ImplementationReviewWorkflow")
+        #expect(workflows.first?.steps.map(\.id) == ["implement"])
+        let call = runner.recordedCalls().first
+        #expect(call?.arguments.contains("--package-path") == true)
+        #expect(call?.arguments.contains("--scratch-path") == true)
+        #expect(call.map { Array($0.arguments.suffix(2)) } == ["ImplementationReviewWorkflow", "describe"])
+        #expect(call?.timeoutSeconds == 120)
+    }
 }
 
 private struct RecordedProcessCall: Equatable {

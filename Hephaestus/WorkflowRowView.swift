@@ -33,6 +33,7 @@ struct WorkflowRow: View {
                 )
             }
         }
+        .accessibilityIdentifier("workflow.row.\(workflow.id)")
     }
 }
 
@@ -93,6 +94,7 @@ private struct WorkflowRowHeader: View {
         .buttonStyle(.borderedProminent)
         .tint(theme.colors.accent)
         .disabled(isRunning)
+        .accessibilityIdentifier("workflow.run.\(workflow.id)")
     }
 }
 
@@ -112,6 +114,7 @@ private struct WorkflowDisclosureButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isExpanded ? "Collapse \(title)" : "Expand \(title)")
+        .accessibilityIdentifier("workflow.disclosure.\(title)")
     }
 }
 
