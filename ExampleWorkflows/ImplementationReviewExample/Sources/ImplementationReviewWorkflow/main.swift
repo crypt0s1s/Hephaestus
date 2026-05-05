@@ -28,6 +28,8 @@ struct WorkflowEvent: Codable {
     let title: String?
     let status: String?
     let summary: String?
+    let inputPreview: String?
+    let outputPreview: String?
 }
 
 struct WorkflowRunInput: Codable {
@@ -77,17 +79,17 @@ do {
         let input = try loadRunInput()
         let planPath = input.values["planPath"] ?? "unspecified plan"
         let buildCommand = input.values["buildCommand"] ?? "unspecified build"
-        emit(WorkflowEvent(type: "workflowStarted", stepID: nil, title: description.name, status: "inProgress", summary: "External workflow process started."))
-        emit(WorkflowEvent(type: "stepStarted", stepID: "implement", title: "Implement plan", status: "inProgress", summary: "Fake implementer started for \(planPath)."))
-        emit(WorkflowEvent(type: "stepFinished", stepID: "implement", title: "Implement plan", status: "succeeded", summary: "Fake implementer finished."))
-        emit(WorkflowEvent(type: "stepStarted", stepID: "build", title: "Build", status: "inProgress", summary: "Fake build started: \(buildCommand)."))
-        emit(WorkflowEvent(type: "stepFinished", stepID: "build", title: "Build", status: "succeeded", summary: "Fake build passed."))
-        emit(WorkflowEvent(type: "stepStarted", stepID: "review-a", title: "Reviewer A", status: "inProgress", summary: "Reviewer A started."))
-        emit(WorkflowEvent(type: "stepStarted", stepID: "review-b", title: "Reviewer B", status: "inProgress", summary: "Reviewer B started."))
-        emit(WorkflowEvent(type: "stepFinished", stepID: "review-a", title: "Reviewer A", status: "succeeded", summary: "Reviewer A passed."))
-        emit(WorkflowEvent(type: "stepFinished", stepID: "review-b", title: "Reviewer B", status: "succeeded", summary: "Reviewer B passed."))
-        emit(WorkflowEvent(type: "stepFinished", stepID: "gate", title: "Review gate", status: "succeeded", summary: "No blocking findings."))
-        emit(WorkflowEvent(type: "workflowFinished", stepID: nil, title: description.name, status: "succeeded", summary: "External fake workflow completed."))
+        emit(WorkflowEvent(type: "workflowStarted", stepID: nil, title: description.name, status: "inProgress", summary: "External workflow process started.", inputPreview: nil, outputPreview: nil))
+        emit(WorkflowEvent(type: "stepStarted", stepID: "implement", title: "Implement plan", status: "inProgress", summary: "Fake implementer started for \(planPath).", inputPreview: "Project: \(input.projectPath)\nPlan: \(planPath)", outputPreview: nil))
+        emit(WorkflowEvent(type: "stepFinished", stepID: "implement", title: "Implement plan", status: "succeeded", summary: "Fake implementer finished.", inputPreview: nil, outputPreview: "Changed paths: Sources/HelloWorld/main.swift"))
+        emit(WorkflowEvent(type: "stepStarted", stepID: "build", title: "Build", status: "inProgress", summary: "Fake build started: \(buildCommand).", inputPreview: buildCommand, outputPreview: nil))
+        emit(WorkflowEvent(type: "stepFinished", stepID: "build", title: "Build", status: "succeeded", summary: "Fake build passed.", inputPreview: nil, outputPreview: "Build completed successfully."))
+        emit(WorkflowEvent(type: "stepStarted", stepID: "review-a", title: "Reviewer A", status: "inProgress", summary: "Reviewer A started.", inputPreview: "Review the latest patch for P1/P2 findings.", outputPreview: nil))
+        emit(WorkflowEvent(type: "stepStarted", stepID: "review-b", title: "Reviewer B", status: "inProgress", summary: "Reviewer B started.", inputPreview: "Review the latest patch for P1/P2 findings.", outputPreview: nil))
+        emit(WorkflowEvent(type: "stepFinished", stepID: "review-a", title: "Reviewer A", status: "succeeded", summary: "Reviewer A passed.", inputPreview: nil, outputPreview: "pass"))
+        emit(WorkflowEvent(type: "stepFinished", stepID: "review-b", title: "Reviewer B", status: "succeeded", summary: "Reviewer B passed.", inputPreview: nil, outputPreview: "pass"))
+        emit(WorkflowEvent(type: "stepFinished", stepID: "gate", title: "Review gate", status: "succeeded", summary: "No blocking findings.", inputPreview: "Reviewer A: pass\nReviewer B: pass", outputPreview: "Workflow may complete."))
+        emit(WorkflowEvent(type: "workflowFinished", stepID: nil, title: description.name, status: "succeeded", summary: "External fake workflow completed.", inputPreview: nil, outputPreview: nil))
     default:
         fputs("Unknown command: \(command)\n", stderr)
         exit(64)

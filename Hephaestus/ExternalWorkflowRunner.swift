@@ -24,7 +24,9 @@ struct ExternalWorkflowRunner {
                 stepID: nil,
                 title: workflow.title,
                 status: .inProgress,
-                summary: "Starting external Swift workflow."
+                summary: "Starting external Swift workflow.",
+                inputPreview: nil,
+                outputPreview: nil
             )
         )
         if let progress {
@@ -146,15 +148,18 @@ private actor ExternalWorkflowProgressRecorder {
             stepRecords[index].title = title
             stepRecords[index].status = status
             stepRecords[index].summary = summary
-            stepRecords[index].outputPreview = event.summary
+            if let inputPreview = event.inputPreview {
+                stepRecords[index].inputPreview = inputPreview
+            }
+            stepRecords[index].outputPreview = event.outputPreview ?? event.summary
         } else {
             stepRecords.append(WorkflowStepRecord(
                 id: stepID,
                 title: title,
                 status: status,
                 summary: summary,
-                inputPreview: nil,
-                outputPreview: event.summary,
+                inputPreview: event.inputPreview,
+                outputPreview: event.outputPreview ?? event.summary,
                 sortOrder: stepRecords.count
             ))
         }

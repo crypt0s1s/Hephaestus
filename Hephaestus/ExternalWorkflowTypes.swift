@@ -33,6 +33,8 @@ nonisolated struct ExternalWorkflowEvent: Codable, Equatable {
     let title: String?
     let status: ExternalWorkflowEventStatus?
     let summary: String?
+    let inputPreview: String?
+    let outputPreview: String?
 }
 
 nonisolated enum ExternalWorkflowEventType: String, Codable, Equatable {
