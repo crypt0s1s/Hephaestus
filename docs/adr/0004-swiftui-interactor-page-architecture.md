@@ -158,7 +158,7 @@ init(
 
 The frontend infrastructure should include:
 
-- `BaseInteractor<State, Action>`
+- `Interactor`
 - `Page<Interactor, Content>`
 - `PageTaskScope`
 - `StoreState<Data, Failure>`
@@ -201,9 +201,9 @@ enum StoreState<Data, Failure: Error> {
 
 Use `StoreState` when a page or service renders data that can be loading, loaded, or failed. Prefer this over local pairs such as `isLoadingSessions` plus `persistenceErrorMessage`, or `isLoading` plus optional data plus optional error. The optional placeholder lets the UI keep rendering stale data while a refresh is in flight.
 
-### `BaseInteractor`
+### `Interactor`
 
-`BaseInteractor` should:
+`Interactor` should:
 
 - be `@MainActor`
 - own `@Published private(set) var state`
@@ -220,33 +220,15 @@ Illustrative shape:
 
 ```swift
 @MainActor
-class BaseInteractor<State, Action>: ObservableObject {
-    @Published private(set) var state: State
-    private let taskScope = PageTaskScope()
+protocol Interactor: ObservableObject {
+    associatedtype State
+    associatedtype Action
 
-    init(initialState: State) {
-        self.state = initialState
-    }
+    var state: State { get }
 
-    func handle(_ action: Action) {
-        taskScope.run { [weak self] in
-            await self?.handleAction(action)
-        }
-    }
-
-    func onAppear() {}
-
-    func onDisappear() {
-        taskScope.cancelAll()
-    }
-
-    func handleAction(_ action: Action) async {
-        preconditionFailure("Override handleAction(_:)")
-    }
-
-    func setState(_ update: (inout State) -> Void) {
-        update(&state)
-    }
+    func handle(_ action: Action)
+    func onAppear()
+    func onDisappear()
 }
 ```
 
@@ -274,13 +256,13 @@ Page(
 The illustrative shape is:
 
 ```swift
-struct Page<Interactor: BaseInteractor<State, Action>, State, Action, Content: View>: View {
-    @StateObject private var interactor: Interactor
-    private let view: (State, @escaping (Action) -> Void) -> Content
+struct Page<PageInteractor: Interactor, Content: View>: View {
+    @StateObject private var interactor: PageInteractor
+    private let view: (PageInteractor.State, @escaping (PageInteractor.Action) -> Void) -> Content
 
     init(
-        interactor: @autoclosure @escaping () -> Interactor,
-        @ViewBuilder view: @escaping (State, @escaping (Action) -> Void) -> Content
+        interactor: @autoclosure @escaping () -> PageInteractor,
+        @ViewBuilder view: @escaping (PageInteractor.State, @escaping (PageInteractor.Action) -> Void) -> Content
     ) {
         _interactor = StateObject(wrappedValue: interactor())
         self.view = view

@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		210F78112F8E4C850000B61B /* Anvil in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78162F8E4C850000B61B /* Anvil */; };
+		210F78272F8E4C850000B61B /* AnvilTheme in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78252F8E4C850000B61B /* AnvilTheme */; };
+		210F78282F8E4C850000B61B /* AnvilUI in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78262F8E4C850000B61B /* AnvilUI */; };
 		210F78122F8E4C850000B61B /* TaskWorkspaceContracts in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78172F8E4C850000B61B /* TaskWorkspaceContracts */; };
 		210F78132F8E4C850000B61B /* TaskWorkspaceFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78182F8E4C850000B61B /* TaskWorkspaceFeature */; };
 		210F78142F8E4C850000B61B /* HephaestusComposition in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78192F8E4C850000B61B /* HephaestusComposition */; };
@@ -61,6 +63,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				210F78112F8E4C850000B61B /* Anvil in Frameworks */,
+				210F78272F8E4C850000B61B /* AnvilTheme in Frameworks */,
+				210F78282F8E4C850000B61B /* AnvilUI in Frameworks */,
 				210F78122F8E4C850000B61B /* TaskWorkspaceContracts in Frameworks */,
 				210F78132F8E4C850000B61B /* TaskWorkspaceFeature in Frameworks */,
 				210F78142F8E4C850000B61B /* HephaestusComposition in Frameworks */,
@@ -126,6 +130,8 @@
 			name = Hephaestus;
 			packageProductDependencies = (
 				210F78162F8E4C850000B61B /* Anvil */,
+				210F78252F8E4C850000B61B /* AnvilTheme */,
+				210F78262F8E4C850000B61B /* AnvilUI */,
 				210F78172F8E4C850000B61B /* TaskWorkspaceContracts */,
 				210F78182F8E4C850000B61B /* TaskWorkspaceFeature */,
 				210F78192F8E4C850000B61B /* HephaestusComposition */,
@@ -214,7 +220,13 @@
 			mainGroup = 210F77DC2F8E4C840000B61B;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				210F781B2F8E4C850000B61B /* XCLocalSwiftPackageReference "." */,
+				210F78202F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/Anvil" */,
+				210F78292F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/AnvilTheme" */,
+				210F782A2F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/AnvilUI" */,
+				210F78212F8E4C850000B61B /* XCLocalSwiftPackageReference "Features/TaskWorkspaceContracts" */,
+				210F78222F8E4C850000B61B /* XCLocalSwiftPackageReference "Features/TaskWorkspaceFeature" */,
+				210F78232F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/HephaestusComposition" */,
+				210F78242F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/HephaestusRuntime" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 210F77E62F8E4C840000B61B /* Products */;
@@ -420,7 +432,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
@@ -430,6 +442,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = jsumskas.Hephaestus;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -454,7 +467,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
@@ -464,6 +477,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = jsumskas.Hephaestus;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -604,36 +618,70 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		210F781B2F8E4C850000B61B /* XCLocalSwiftPackageReference "." */ = {
+		210F78202F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/Anvil" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = .;
+			relativePath = Core/Anvil;
+		};
+		210F78292F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/AnvilTheme" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Core/AnvilTheme;
+		};
+		210F782A2F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/AnvilUI" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Core/AnvilUI;
+		};
+		210F78212F8E4C850000B61B /* XCLocalSwiftPackageReference "Features/TaskWorkspaceContracts" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Features/TaskWorkspaceContracts;
+		};
+		210F78222F8E4C850000B61B /* XCLocalSwiftPackageReference "Features/TaskWorkspaceFeature" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Features/TaskWorkspaceFeature;
+		};
+		210F78232F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/HephaestusComposition" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Core/HephaestusComposition;
+		};
+		210F78242F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/HephaestusRuntime" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Core/HephaestusRuntime;
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		210F78162F8E4C850000B61B /* Anvil */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 210F781B2F8E4C850000B61B /* XCLocalSwiftPackageReference "." */;
+			package = 210F78202F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/Anvil" */;
 			productName = Anvil;
+		};
+		210F78252F8E4C850000B61B /* AnvilTheme */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 210F78292F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/AnvilTheme" */;
+			productName = AnvilTheme;
+		};
+		210F78262F8E4C850000B61B /* AnvilUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 210F782A2F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/AnvilUI" */;
+			productName = AnvilUI;
 		};
 		210F78172F8E4C850000B61B /* TaskWorkspaceContracts */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 210F781B2F8E4C850000B61B /* XCLocalSwiftPackageReference "." */;
+			package = 210F78212F8E4C850000B61B /* XCLocalSwiftPackageReference "Features/TaskWorkspaceContracts" */;
 			productName = TaskWorkspaceContracts;
 		};
 		210F78182F8E4C850000B61B /* TaskWorkspaceFeature */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 210F781B2F8E4C850000B61B /* XCLocalSwiftPackageReference "." */;
+			package = 210F78222F8E4C850000B61B /* XCLocalSwiftPackageReference "Features/TaskWorkspaceFeature" */;
 			productName = TaskWorkspaceFeature;
 		};
 		210F78192F8E4C850000B61B /* HephaestusComposition */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 210F781B2F8E4C850000B61B /* XCLocalSwiftPackageReference "." */;
+			package = 210F78232F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/HephaestusComposition" */;
 			productName = HephaestusComposition;
 		};
 		210F781A2F8E4C850000B61B /* HephaestusRuntime */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 210F781B2F8E4C850000B61B /* XCLocalSwiftPackageReference "." */;
+			package = 210F78242F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/HephaestusRuntime" */;
 			productName = HephaestusRuntime;
 		};
 /* End XCSwiftPackageProductDependency section */

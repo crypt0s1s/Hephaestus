@@ -9,10 +9,13 @@ let package = Package(
     ],
     products: [
         .library(name: "Anvil", targets: ["Anvil"]),
+        .library(name: "AnvilTheme", targets: ["AnvilTheme"]),
+        .library(name: "AnvilUI", targets: ["AnvilUI"]),
         .library(name: "HephaestusDomain", targets: ["HephaestusDomain"]),
         .library(name: "HephaestusObservation", targets: ["HephaestusObservation"]),
         .library(name: "HephaestusHarness", targets: ["HephaestusHarness"]),
         .library(name: "HephaestusKernel", targets: ["HephaestusKernel"]),
+        .library(name: "HephaestusTools", targets: ["HephaestusTools"]),
         .library(name: "HephaestusLLM", targets: ["HephaestusLLM"]),
         .library(name: "HephaestusRuntime", targets: ["HephaestusRuntime"]),
         .library(name: "HephaestusComposition", targets: ["HephaestusComposition"]),
@@ -24,6 +27,15 @@ let package = Package(
         .target(
             name: "Anvil",
             path: "Core/Anvil/Sources/Anvil"
+        ),
+        .target(
+            name: "AnvilTheme",
+            path: "Core/AnvilTheme/Sources/AnvilTheme"
+        ),
+        .target(
+            name: "AnvilUI",
+            dependencies: ["AnvilTheme"],
+            path: "Core/AnvilUI/Sources/AnvilUI"
         ),
         .target(
             name: "HephaestusDomain",
@@ -42,6 +54,11 @@ let package = Package(
         .target(
             name: "HephaestusKernel",
             path: "Core/HephaestusKernel/Sources/HephaestusKernel"
+        ),
+        .target(
+            name: "HephaestusTools",
+            dependencies: ["HephaestusKernel"],
+            path: "Core/HephaestusTools/Sources/HephaestusTools"
         ),
         .target(
             name: "HephaestusLLM",
@@ -65,7 +82,7 @@ let package = Package(
         ),
         .target(
             name: "TaskWorkspaceFeature",
-            dependencies: ["Anvil", "TaskWorkspaceContracts", "HephaestusDomain", "HephaestusKernel", "HephaestusObservation", "HephaestusRuntime"],
+            dependencies: ["Anvil", "AnvilTheme", "AnvilUI", "TaskWorkspaceContracts", "HephaestusDomain", "HephaestusKernel", "HephaestusObservation", "HephaestusRuntime"],
             path: "Features/TaskWorkspaceFeature/Sources/TaskWorkspaceFeature"
         ),
         .executableTarget(
@@ -77,12 +94,15 @@ let package = Package(
             name: "HephaestusRuntimeTests",
             dependencies: [
                 "Anvil",
+                "AnvilTheme",
+                "AnvilUI",
                 "HephaestusComposition",
                 "HephaestusDomain",
                 "HephaestusHarness",
                 "HephaestusLLM",
                 "HephaestusObservation",
                 "HephaestusRuntime",
+                "HephaestusTools",
                 "TaskWorkspaceFeature",
                 "TaskWorkspaceContracts"
             ],

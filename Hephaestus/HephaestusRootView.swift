@@ -1,3 +1,4 @@
+import AnvilTheme
 import SwiftUI
 
 struct HephaestusRootView: View {
@@ -13,6 +14,7 @@ struct HephaestusRootView: View {
         switch result {
         case .success(let shell):
             shell
+                .anvilTheme(.hephaestus)
         case .failure(let error):
             StartupErrorView(error: error)
         }

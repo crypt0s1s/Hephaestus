@@ -10,6 +10,7 @@ import TaskWorkspaceContracts
 @MainActor
 struct HephaestusAppShell: View {
     @StateObject private var router: Router<AnyRouteInput, AnyModalInput>
+    @StateObject private var workflowModel: WorkflowRunnerModel
 
     private let registry: DestinationRegistry
     private let runtime: PersistentAppRuntime
@@ -20,6 +21,7 @@ struct HephaestusAppShell: View {
     init() throws {
         let appRouter = Router<AnyRouteInput, AnyModalInput>()
         _router = StateObject(wrappedValue: appRouter)
+        _workflowModel = StateObject(wrappedValue: WorkflowRunnerModel())
         runtime = try PersistentAppRuntime(store: FileAppStateStore(fileURL: Self.defaultAppStateURL))
         taskSessionRegistry = TaskSessionServiceRegistry(
             createRun: runtime,
@@ -40,16 +42,7 @@ struct HephaestusAppShell: View {
     }
 
     var body: some View {
-        RouteHost(
-            router: router,
-            registry: registry,
-            context: buildContext()
-        )
-        .task {
-            if router.path.isEmpty {
-                router.replaceStack([startupRoute])
-            }
-        }
+        WorkflowRunnerView(model: workflowModel)
     }
 
     private func buildContext() -> RouteBuildContext {

@@ -44,7 +44,7 @@ Package.swift
 
 The package already contains the reusable architecture needed by the app shell:
 
-- `Anvil` provides `Router<AnyRouteInput, AnyModalInput>`, `DestinationRegistry`, `RouteBuildContext`, `Page`, and `BaseInteractor`.
+- `Anvil` provides `Router<AnyRouteInput, AnyModalInput>`, `DestinationRegistry`, `RouteBuildContext`, `Page`, and `Interactor`.
 - `ChatContracts` provides `ChatRouteInput` and `ChatSettingsModalInput`.
 - `ChatFeature` provides `ChatRoutes.registration`, `ChatRoutes.settingsModalRegistration`, `ChatPageInteractor`, and `ChatPage`.
 - `HephaestusComposition` provides `MockRuntimeComposition.make()` and `MockRuntimeHarness`.

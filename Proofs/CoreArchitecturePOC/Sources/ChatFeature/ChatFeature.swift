@@ -54,10 +54,13 @@ public struct ChatPage: View {
 }
 
 @MainActor
-public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAction> {
+public final class ChatPageInteractor: Interactor {
+    @Published public private(set) var state: ChatPageState
+
     private let input: ChatRouteInput
     private let submitMessage: SubmitUserMessageUseCase
     private let router: Router<AnyRouteInput, AnyModalInput>
+    private let taskScope = PageTaskScope()
 
     public init(
         input: ChatRouteInput,
@@ -67,16 +70,30 @@ public final class ChatPageInteractor: BaseInteractor<ChatPageState, ChatPageAct
         self.input = input
         self.submitMessage = submitMessage
         self.router = router
-        super.init(initialState: ChatPageState())
+        self.state = ChatPageState()
     }
 
-    public override func handleAction(_ action: ChatPageAction) async {
+    public func handle(_ action: ChatPageAction) {
+        taskScope.run { [weak self] in
+            await self?.handleAction(action)
+        }
+    }
+
+    public func onDisappear() {
+        taskScope.cancelAll()
+    }
+
+    public func handleAction(_ action: ChatPageAction) async {
         switch action {
         case .changeDraft(let text):
             handleChangeDraft(text)
         case .tapSend:
             await handleTapSend()
         }
+    }
+
+    public func setState(_ update: (inout ChatPageState) -> Void) {
+        update(&state)
     }
 
     private func handleChangeDraft(_ text: String) {

@@ -1,4 +1,6 @@
 import Anvil
+import AnvilTheme
+import AnvilUI
 import Foundation
 import HephaestusDomain
 import HephaestusKernel
@@ -288,6 +290,7 @@ public struct TaskWorkspacePage: View {
     public let state: TaskWorkspaceState
     public let handle: (TaskWorkspaceAction) -> Void
     @State private var isTranscriptPinnedToBottom = true
+    @Environment(\.anvilTheme) private var theme
 
     private var trimmedDraft: String {
         state.draftText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -330,20 +333,20 @@ public struct TaskWorkspacePage: View {
 
                 Divider()
 
-                VStack(spacing: 10) {
+                VStack(spacing: theme.spacing.medium) {
                     if let errorMessage = state.errorMessage {
                         ErrorBanner(message: errorMessage)
                     }
 
                     composer
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 14)
+                .padding(.horizontal, theme.spacing.large)
+                .padding(.vertical, theme.spacing.medium)
                 .background(.bar)
             }
         }
         .frame(minWidth: 920, minHeight: 560)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(theme.colors.windowBackground)
         .sheet(
             isPresented: Binding(
                 get: { state.providerSettings.isPresented },
@@ -368,10 +371,10 @@ public struct TaskWorkspacePage: View {
         ScrollViewReader { proxy in
             GeometryReader { viewport in
                 ScrollView {
-                    LazyVStack(spacing: 14) {
+                    LazyVStack(spacing: theme.spacing.large) {
                         if state.messages.isEmpty {
                             EmptyTaskState()
-                                .padding(.top, 68)
+                                .padding(.top, theme.spacing.xxLarge + theme.spacing.xxLarge + theme.spacing.xSmall)
                         } else {
                             ForEach(state.messages) { message in
                                 MessageBubble(message: message)
@@ -395,8 +398,8 @@ public struct TaskWorkspacePage: View {
                                 }
                             }
                     }
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 20)
+                    .padding(.horizontal, theme.spacing.xLarge)
+                    .padding(.vertical, theme.spacing.large)
                 }
                 .coordinateSpace(name: ConversationScrollTarget.coordinateSpace)
                 .accessibilityLabel("Conversation transcript")
@@ -420,20 +423,20 @@ public struct TaskWorkspacePage: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: theme.spacing.medium) {
             TextField("Add task instruction", text: Binding(
                 get: { state.draftText },
                 set: { handle(.changeDraft($0)) }
             ), axis: .vertical)
             .textFieldStyle(.plain)
             .lineLimit(1...4)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color(nsColor: .textBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.horizontal, theme.spacing.medium)
+            .padding(.vertical, theme.spacing.small)
+            .background(theme.colors.panelBackground)
+            .clipShape(RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+                RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous)
+                    .stroke(theme.colors.separator, lineWidth: 1)
             }
             .onSubmit {
                 handle(.tapSend)
@@ -472,22 +475,21 @@ private struct HistorySidebar: View {
     let isLoading: Bool
     let errorMessage: String?
     let handle: (TaskWorkspaceAction) -> Void
+    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: theme.spacing.medium) {
             HStack {
                 Text("Tasks")
                     .font(.headline)
                 Spacer()
-                Button {
+                AnvilIconButton(
+                    systemName: "square.and.pencil",
+                    accessibilityLabel: "New task",
+                    size: 28
+                ) {
                     handle(.tapNewTask)
-                } label: {
-                    Label("New task", systemImage: "square.and.pencil")
-                        .labelStyle(.iconOnly)
-                        .frame(width: 28, height: 28)
                 }
-                .buttonStyle(.borderless)
-                .help("New task")
                 .accessibilityIdentifier(TaskWorkspaceAccessibilityID.newTaskButton)
             }
 
@@ -497,58 +499,51 @@ private struct HistorySidebar: View {
             }
 
             if isLoading && sessions.isEmpty {
-                HStack(spacing: 8) {
+                HStack(spacing: theme.spacing.small) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Loading")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    AnvilStatusText("Loading")
                 }
                 Spacer()
             } else if sessions.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: theme.spacing.small) {
                     Image(systemName: "tray")
                         .font(.title3)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.colors.textSecondary)
                     Text("No tasks")
                         .font(.callout.weight(.semibold))
                     Text("Start a task and it will appear here.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.colors.textSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 18)
+                .padding(.top, theme.spacing.large)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier(TaskWorkspaceAccessibilityID.historyEmptyState)
                 Spacer()
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 6) {
+                    LazyVStack(spacing: theme.spacing.small) {
                         if isLoading {
-                            HStack(spacing: 8) {
+                            HStack(spacing: theme.spacing.small) {
                                 ProgressView()
                                     .controlSize(.small)
-                                Text("Refreshing")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                AnvilStatusText("Refreshing")
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
+                            .padding(.horizontal, theme.spacing.medium)
+                            .padding(.vertical, theme.spacing.small)
                         }
 
                         ForEach(sessions) { session in
                             let isSelected = selectedRunID == session.id
-                            Button {
+                            HistoryRow(
+                                session: session,
+                                isSelected: isSelected
+                            ) {
                                 guard !isSelected else { return }
                                 handle(.tapTask(session.id))
-                            } label: {
-                                HistoryRow(
-                                    session: session,
-                                    isSelected: isSelected
-                                )
                             }
-                            .buttonStyle(.plain)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
@@ -556,34 +551,24 @@ private struct HistorySidebar: View {
                 .accessibilityIdentifier(TaskWorkspaceAccessibilityID.historyList)
             }
         }
-        .padding(14)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .padding(theme.spacing.medium)
+        .background(theme.colors.sidebarBackground)
     }
 }
 
 private struct HistoryRow: View {
     let session: TaskSummaryState
     let isSelected: Bool
+    let action: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(session.title)
-                .font(.callout.weight(.medium))
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text("\(session.messageCount) messages")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(isSelected ? Color.accentColor.opacity(0.35) : Color.primary.opacity(0.06), lineWidth: 1)
+        AnvilSidebarRow(
+            title: session.title,
+            subtitle: "\(session.messageCount) messages",
+            isSelected: isSelected,
+            action: action
+        ) {
+            EmptyView()
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(session.title), \(session.messageCount) messages")
@@ -596,81 +581,68 @@ private struct TaskHeader: View {
     let canInspect: Bool
     let canCancel: Bool
     let handle: (TaskWorkspaceAction) -> Void
+    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: theme.spacing.medium) {
             Image(systemName: "hammer.fill")
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(theme.colors.accentForeground)
                 .frame(width: 34, height: 34)
-                .background(Color.accentColor)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(theme.colors.accent)
+                .clipShape(RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous))
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 2) {
-                    Text("Task Workspace")
+            VStack(alignment: .leading, spacing: theme.spacing.xxSmall) {
+                Text("Task Workspace")
                     .font(.headline)
                 Text(runSubtitle)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.colors.textSecondary)
             }
 
             Spacer()
 
-            Button {
+            AnvilIconButton(
+                systemName: "list.bullet.rectangle",
+                accessibilityLabel: "Inspect run"
+            ) {
                 handle(.tapInspector)
-            } label: {
-                Label("Inspect run", systemImage: "list.bullet.rectangle")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 30, height: 30)
             }
-            .buttonStyle(.borderless)
             .disabled(!canInspect)
-            .help("Inspect run")
-            .accessibilityLabel("Inspect run")
             .accessibilityIdentifier(TaskWorkspaceAccessibilityID.inspectorButton)
 
-            Button {
+            AnvilIconButton(
+                systemName: "stop.circle",
+                accessibilityLabel: "Cancel response"
+            ) {
                 handle(.tapCancel)
-            } label: {
-                Label("Cancel response", systemImage: "stop.circle")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 30, height: 30)
             }
-            .buttonStyle(.borderless)
             .disabled(!canCancel)
-            .help("Cancel response")
-            .accessibilityLabel("Cancel response")
 
-            Button {
+            AnvilIconButton(
+                systemName: "gearshape",
+                accessibilityLabel: "Provider settings"
+            ) {
                 handle(.tapSettings)
-            } label: {
-                Label("Provider settings", systemImage: "gearshape")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 30, height: 30)
             }
-            .buttonStyle(.borderless)
-            .help("Provider settings")
-            .accessibilityLabel("Provider settings")
             .accessibilityIdentifier(TaskWorkspaceAccessibilityID.settingsButton)
 
-            HStack(spacing: 6) {
+            HStack(spacing: theme.spacing.small) {
                 Circle()
-                    .fill(isRunning ? Color.orange : Color.green)
+                    .fill(isRunning ? theme.colors.warning : theme.colors.success)
                     .frame(width: 8, height: 8)
-                Text(isRunning ? "Responding" : "Ready")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                AnvilStatusText(isRunning ? "Responding" : "Ready")
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.primary.opacity(0.06))
+            .padding(.horizontal, theme.spacing.medium)
+            .padding(.vertical, theme.spacing.small)
+            .background(theme.colors.border)
             .clipShape(Capsule())
             .accessibilityLabel(isRunning ? "Assistant responding" : "Assistant ready")
             .accessibilityIdentifier(isRunning ? TaskWorkspaceAccessibilityID.runningStatus : "task.readyStatus")
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 14)
+        .padding(.horizontal, theme.spacing.large)
+        .padding(.vertical, theme.spacing.medium)
         .background(.bar)
     }
 
@@ -683,19 +655,21 @@ private struct TaskHeader: View {
 }
 
 private struct EmptyTaskState: View {
+    @Environment(\.anvilTheme) private var theme
+
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: theme.spacing.medium) {
             Image(systemName: "sparkles")
                 .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(theme.colors.accent)
                 .accessibilityHidden(true)
 
-            VStack(spacing: 5) {
+            VStack(spacing: theme.spacing.xSmall) {
                 Text("Start a focused task")
                     .font(.title3.weight(.semibold))
                 Text("Describe the task, then inspect the run as it moves through the workspace.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.colors.textSecondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 420)
             }
@@ -707,16 +681,16 @@ private struct EmptyTaskState: View {
 }
 
 private struct RunningStatus: View {
+    @Environment(\.anvilTheme) private var theme
+
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: theme.spacing.small) {
             ProgressView()
                 .controlSize(.small)
-            Text("Foundry is running")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            AnvilStatusText("Foundry is running")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 6)
+        .padding(.leading, theme.spacing.small)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(TaskWorkspaceAccessibilityID.runningStatus)
     }
@@ -724,25 +698,26 @@ private struct RunningStatus: View {
 
 private struct ErrorBanner: View {
     let message: String
+    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: theme.spacing.medium) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
+                .foregroundStyle(theme.colors.danger)
                 .accessibilityHidden(true)
             Text(message)
                 .font(.callout)
-                .foregroundStyle(.primary)
+                .foregroundStyle(theme.colors.textPrimary)
                 .textSelection(.enabled)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Color.red.opacity(0.10))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, theme.spacing.medium)
+        .padding(.vertical, theme.spacing.small)
+        .background(theme.colors.danger.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.red.opacity(0.22), lineWidth: 1)
+            RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous)
+                .stroke(theme.colors.danger.opacity(0.22), lineWidth: 1)
         }
         .accessibilityLabel("Task error: \(message)")
         .accessibilityIdentifier(TaskWorkspaceAccessibilityID.errorBanner)
@@ -752,20 +727,19 @@ private struct ErrorBanner: View {
 private struct ProviderSettingsSheet: View {
     let state: ProviderSettingsPanelState
     let handle: (TaskWorkspaceAction) -> Void
+    @Environment(\.anvilTheme) private var theme
 
     private var canSubmit: Bool {
         !state.isSaving && state.validation != .validating
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: theme.spacing.large) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: theme.spacing.xSmall) {
                     Text("Provider Settings")
                         .font(.title3.weight(.semibold))
-                    Text(state.hasSavedAPIKey ? "A saved API key is available." : "No API key is saved.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    AnvilStatusText(state.hasSavedAPIKey ? "A saved API key is available." : "No API key is saved.")
                 }
                 Spacer()
                 Button("Cancel") {
@@ -774,7 +748,7 @@ private struct ProviderSettingsSheet: View {
                 .keyboardShortcut(.cancelAction)
             }
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: theme.spacing.medium) {
                 LabeledContent("Base URL") {
                     TextField("https://api.openai.com/v1", text: Binding(
                         get: { state.baseURLString },
@@ -832,7 +806,7 @@ private struct ProviderSettingsSheet: View {
                 .accessibilityIdentifier(TaskWorkspaceAccessibilityID.providerSave)
             }
         }
-        .padding(22)
+        .padding(theme.spacing.xLarge)
         .frame(width: 560)
     }
 
@@ -840,44 +814,35 @@ private struct ProviderSettingsSheet: View {
     private var validationView: some View {
         switch state.validation {
         case .idle:
-            Text("Validate before saving live provider settings.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            AnvilStatusText("Validate before saving live provider settings.")
         case .validating:
-            HStack(spacing: 8) {
+            HStack(spacing: theme.spacing.small) {
                 ProgressView()
                     .controlSize(.small)
-                Text("Validating provider")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                AnvilStatusText("Validating provider")
             }
         case .success(let message):
-            Label(message, systemImage: "checkmark.circle.fill")
-                .font(.caption)
-                .foregroundStyle(.green)
+            AnvilStatusText(message, tone: .success)
         case .failure(let message):
-            Label(message, systemImage: "xmark.octagon.fill")
-                .font(.caption)
-                .foregroundStyle(.red)
-                .textSelection(.enabled)
+            AnvilStatusText(message, tone: .danger)
         }
     }
 }
 
 private struct RunInspectorSheet: View {
     let state: RunInspectorPanelState
+    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: theme.spacing.large) {
             Text("Run Inspector")
                 .font(.title3.weight(.semibold))
 
             if state.isLoading {
-                HStack(spacing: 8) {
+                HStack(spacing: theme.spacing.small) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Loading run details")
-                        .foregroundStyle(.secondary)
+                    AnvilStatusText("Loading run details")
                 }
                 Spacer()
             } else if let errorMessage = state.errorMessage {
@@ -890,7 +855,7 @@ private struct RunInspectorSheet: View {
                 Spacer()
             }
         }
-        .padding(22)
+        .padding(theme.spacing.xLarge)
         .frame(width: 720, height: 620)
         .accessibilityIdentifier(TaskWorkspaceAccessibilityID.inspectorPanel)
     }
@@ -898,10 +863,11 @@ private struct RunInspectorSheet: View {
 
 private struct RunInspectionContent: View {
     let inspection: RunInspectionSnapshot
+    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: theme.spacing.large) {
                 InspectorSection(title: "Timeline") {
                     if inspection.events.isEmpty {
                         UnavailableRow(text: "No runtime events are available.")
@@ -912,19 +878,19 @@ private struct RunInspectionContent: View {
                                     .font(.caption.weight(.semibold))
                                 Text(event.summary)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(theme.colors.textSecondary)
                                     .textSelection(.enabled)
                                 if let error = event.error {
                                     Text(error)
                                         .font(.caption)
-                                        .foregroundStyle(.red)
+                                        .foregroundStyle(theme.colors.danger)
                                         .textSelection(.enabled)
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
-                            .background(event.error == nil ? Color.primary.opacity(0.04) : Color.red.opacity(0.10))
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .padding(theme.spacing.medium)
+                            .background(event.error == nil ? theme.colors.elevatedPanelBackground : theme.colors.danger.opacity(0.10))
+                            .clipShape(RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous))
                         }
                     }
                 }
@@ -948,9 +914,9 @@ private struct RunInspectionContent: View {
                             Text("\(request.model): \(request.messageCount) messages, stream \(request.stream ? "on" : "off"), system prompt \(request.systemPromptIncluded ? "included" : "excluded")")
                                 .font(.caption)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(10)
-                                .background(Color.primary.opacity(0.04))
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .padding(theme.spacing.medium)
+                                .background(theme.colors.elevatedPanelBackground)
+                                .clipShape(RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous))
                         }
                     }
                 }
@@ -972,9 +938,10 @@ private struct RunInspectionContent: View {
 private struct InspectorSection<Content: View>: View {
     let title: String
     @ViewBuilder let content: () -> Content
+    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: theme.spacing.medium) {
             Text(title)
                 .font(.headline)
             content()
@@ -985,9 +952,10 @@ private struct InspectorSection<Content: View>: View {
 
 private struct TurnInspectionRow: View {
     let turn: ObservedTurn
+    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: theme.spacing.small) {
             Text("Turn \(turn.id.uuidString.prefix(8)) - \(turn.status.rawValue)")
                 .font(.caption.weight(.semibold))
             Text("User message: \(shortID(turn.userMessageID))")
@@ -1000,13 +968,13 @@ private struct TurnInspectionRow: View {
             } else {
                 Text("Assistant message unavailable")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.colors.textSecondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(turn.status == .failed ? Color.red.opacity(0.10) : Color.primary.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(theme.spacing.medium)
+        .background(turn.status == .failed ? theme.colors.danger.opacity(0.10) : theme.colors.elevatedPanelBackground)
+        .clipShape(RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous))
     }
 
     private func shortID(_ id: UUID?) -> String {
@@ -1016,27 +984,28 @@ private struct TurnInspectionRow: View {
 
 private struct ContextTraceRow: View {
     let trace: ObservedContextTrace
+    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: theme.spacing.small) {
             Text(trace.policyName)
                 .font(.caption.weight(.semibold))
             if let messageLimit = trace.messageLimit {
                 Text("Budget: last \(messageLimit) messages")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.colors.textSecondary)
             } else {
                 Text("Budget unavailable")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.colors.textSecondary)
             }
             ContextMessageList(title: "Included", ids: trace.includedMessageIDs, emptyText: "No messages were included.")
             ContextMessageList(title: "Excluded", ids: trace.excludedMessageIDs, emptyText: "No messages were excluded.")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(Color.primary.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(theme.spacing.medium)
+        .background(theme.colors.elevatedPanelBackground)
+        .clipShape(RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous))
     }
 }
 
@@ -1044,16 +1013,15 @@ private struct ContextMessageList: View {
     let title: String
     let ids: [UUID]
     let emptyText: String
+    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: theme.spacing.xSmall) {
             Text(title)
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(theme.colors.textSecondary)
             if ids.isEmpty {
-                Text(emptyText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                AnvilStatusText(emptyText)
             } else {
                 ForEach(ids, id: \.self) { id in
                     Text("Message \(id.uuidString.prefix(8))")
@@ -1067,20 +1035,20 @@ private struct ContextMessageList: View {
 
 private struct UnavailableRow: View {
     let text: String
+    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+        AnvilStatusText(text)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
-            .background(Color.primary.opacity(0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(theme.spacing.medium)
+            .background(theme.colors.elevatedPanelBackground)
+            .clipShape(RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous))
     }
 }
 
 private struct MessageBubble: View {
     let message: ConversationMessageState
+    @Environment(\.anvilTheme) private var theme
 
     private var isUser: Bool {
         message.role == .user
@@ -1092,34 +1060,32 @@ private struct MessageBubble: View {
                 Spacer(minLength: 72)
             }
 
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: theme.spacing.small) {
+                HStack(spacing: theme.spacing.small) {
                     Image(systemName: isUser ? "person.crop.circle.fill" : "hammer.circle.fill")
-                        .foregroundStyle(isUser ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(isUser ? theme.colors.accent : theme.colors.textSecondary)
                         .accessibilityHidden(true)
                     Text(isUser ? "You" : "Assistant")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.colors.textSecondary)
                     if message.isStreaming {
-                        Text("Streaming")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.orange)
+                        AnvilStatusText("Streaming", tone: .warning)
                     }
                 }
 
                 Text(message.text + (message.isStreaming ? " ▌" : ""))
                     .font(.body)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(theme.colors.textPrimary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 11)
+            .padding(.horizontal, theme.spacing.medium)
+            .padding(.vertical, theme.spacing.medium)
             .frame(maxWidth: 520, alignment: .leading)
             .background(background)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous)
                     .stroke(border, lineWidth: 1)
             }
             .accessibilityElement(children: .combine)
@@ -1133,16 +1099,18 @@ private struct MessageBubble: View {
     }
 
     private var background: Color {
-        isUser ? Color.accentColor.opacity(0.13) : Color(nsColor: .controlBackgroundColor)
+        isUser ? theme.colors.selectionBackground : theme.colors.elevatedPanelBackground
     }
 
     private var border: Color {
-        isUser ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.08)
+        isUser ? theme.colors.accent.opacity(0.18) : theme.colors.border
     }
 }
 
 @MainActor
-public final class TaskWorkspaceInteractor: BaseInteractor<TaskWorkspaceState, TaskWorkspaceAction> {
+public final class TaskWorkspaceInteractor: Interactor {
+    @Published public private(set) var state: TaskWorkspaceState
+
     private let workspace: TaskWorkspaceService
     private let initialRunID: UUID?
     private let loadProviderSettings: LoadProviderSettingsUseCase?
@@ -1151,6 +1119,7 @@ public final class TaskWorkspaceInteractor: BaseInteractor<TaskWorkspaceState, T
     private let validateProviderSettings: ValidateProviderSettingsUseCase?
     private let loadRunInspection: LoadRunInspectionUseCase?
     private let subscribeToWorkspace: Bool
+    private let taskScope = PageTaskScope()
     private var didLoadInitialState = false
     private var workspaceTaskID: UUID?
     private var lifecycleTaskID: UUID?
@@ -1173,10 +1142,16 @@ public final class TaskWorkspaceInteractor: BaseInteractor<TaskWorkspaceState, T
         self.validateProviderSettings = validateProviderSettings
         self.loadRunInspection = loadRunInspection
         self.subscribeToWorkspace = subscribeToWorkspace
-        super.init(initialState: TaskWorkspaceState(runID: input.taskID))
+        self.state = TaskWorkspaceState(runID: input.taskID)
     }
 
-    public override func onAppear() {
+    public func handle(_ action: TaskWorkspaceAction) {
+        taskScope.run { [weak self] in
+            await self?.handleAction(action)
+        }
+    }
+
+    public func onAppear() {
         cancelPageTask(lifecycleTaskID)
         lifecycleTaskID = nil
         if didLoadInitialState {
@@ -1192,14 +1167,14 @@ public final class TaskWorkspaceInteractor: BaseInteractor<TaskWorkspaceState, T
         }
     }
 
-    public override func onDisappear() {
+    public func onDisappear() {
         cancelPageTask(lifecycleTaskID)
         lifecycleTaskID = nil
         detachWorkspace()
-        super.onDisappear()
+        taskScope.cancelAll()
     }
 
-    public override func handleAction(_ action: TaskWorkspaceAction) async {
+    public func handleAction(_ action: TaskWorkspaceAction) async {
         switch action {
         case .changeDraft(let text):
             handleChangeDraft(text)
@@ -1241,6 +1216,20 @@ public final class TaskWorkspaceInteractor: BaseInteractor<TaskWorkspaceState, T
         case .dismissInspector:
             setState { $0.inspector.isPresented = false }
         }
+    }
+
+    public func setState(_ update: (inout TaskWorkspaceState) -> Void) {
+        update(&state)
+    }
+
+    @discardableResult
+    public func runPageTask(_ operation: @escaping @MainActor () async -> Void) -> UUID {
+        taskScope.run(operation)
+    }
+
+    public func cancelPageTask(_ id: UUID?) {
+        guard let id else { return }
+        taskScope.cancel(id)
     }
 
     private func loadInitialState() async {

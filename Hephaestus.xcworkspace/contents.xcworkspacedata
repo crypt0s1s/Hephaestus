@@ -5,6 +5,33 @@
       location = "container:Hephaestus.xcodeproj">
    </FileRef>
    <FileRef
-      location = "container:Package.swift">
+      location = "container:Core/Anvil">
+   </FileRef>
+   <FileRef
+      location = "container:Core/HephaestusDomain">
+   </FileRef>
+   <FileRef
+      location = "container:Core/HephaestusObservation">
+   </FileRef>
+   <FileRef
+      location = "container:Core/HephaestusHarness">
+   </FileRef>
+   <FileRef
+      location = "container:Core/HephaestusKernel">
+   </FileRef>
+   <FileRef
+      location = "container:Core/HephaestusLLM">
+   </FileRef>
+   <FileRef
+      location = "container:Core/HephaestusRuntime">
+   </FileRef>
+   <FileRef
+      location = "container:Core/HephaestusComposition">
+   </FileRef>
+   <FileRef
+      location = "container:Features/TaskWorkspaceContracts">
+   </FileRef>
+   <FileRef
+      location = "container:Features/TaskWorkspaceFeature">
    </FileRef>
 </Workspace>
