@@ -22,7 +22,7 @@ struct TaskHeader: View {
         }
         .padding(.horizontal, theme.spacing.large)
         .padding(.vertical, theme.spacing.medium)
-        .background(.bar)
+        .background(theme.colors.panelBackground)
     }
 
     private var appIcon: some View {

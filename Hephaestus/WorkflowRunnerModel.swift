@@ -6,12 +6,19 @@ struct WorkflowRunnerState: Equatable {
     var projects: [WorkflowProject] = []
     var selectedProjectID: WorkflowProject.ID?
     var branchNames: [WorkflowProject.ID: String] = [:]
-    var workflows: [WorkflowDefinition] = [.helloWorld]
-    var expandedWorkflowIDs: Set<WorkflowDefinition.ID> = [WorkflowDefinition.helloWorld.id]
+    var workflows: [WorkflowDefinition] = [.helloWorld, .implementationReviewLoop]
+    var expandedWorkflowIDs: Set<WorkflowDefinition.ID> = [WorkflowDefinition.implementationReviewLoop.id]
+    var implementationPlanPath = ""
+    var implementationBuildCommand = "swift build"
     var isRunning = false
+    var activeWorkflowID: WorkflowDefinition.ID?
     var statusMessage: String?
+    var timelineOutput = ""
+    var stepRecords: [WorkflowStepRecord] = []
     var output = ""
+    var debugLogURL: URL?
     var lastRunSucceeded: Bool?
+    var lastRunWorkflowID: WorkflowDefinition.ID?
 
     var selectedProject: WorkflowProject? {
         guard let selectedProjectID else { return nil }
@@ -109,13 +116,34 @@ final class WorkflowRunnerModel: ObservableObject {
         }
     }
 
-    func runHelloWorldWorkflow() {
+    func updateImplementationPlanPath(_ path: String) {
+        update { $0.implementationPlanPath = path }
+    }
+
+    func updateImplementationBuildCommand(_ command: String) {
+        update { $0.implementationBuildCommand = command }
+    }
+
+    func runWorkflow(_ workflow: WorkflowDefinition) {
+        switch workflow.kind {
+        case .helloWorld:
+            runHelloWorldWorkflow()
+        case .implementationReviewLoop:
+            runImplementationReviewLoop()
+        }
+    }
+
+    private func runHelloWorldWorkflow() {
         guard let project = state.selectedProject else { return }
 
         update {
             $0.isRunning = true
+            $0.activeWorkflowID = WorkflowDefinition.helloWorld.id
             $0.statusMessage = "Running HelloWorld workflow..."
+            $0.timelineOutput = "Step 1 - Create HelloWorld.txt started.\nStep 2 - Delete HelloWorld.txt will run after creation."
+            $0.stepRecords = []
             $0.output = ""
+            $0.debugLogURL = nil
             $0.lastRunSucceeded = nil
         }
 
@@ -123,11 +151,67 @@ final class WorkflowRunnerModel: ObservableObject {
             let result = await workflowRunner.runHelloWorldWorkflow(in: project)
             update {
                 $0.output = result.output
+                $0.debugLogURL = result.debugLogURL
+                $0.stepRecords = result.stepRecords
+                $0.timelineOutput = result.exitCode == 0
+                    ? "Step 1 - Create HelloWorld.txt finished.\nStep 2 - Delete HelloWorld.txt finished.\nWorkflow completed."
+                    : "HelloWorld workflow failed. Open full logs for details."
                 $0.isRunning = false
+                $0.activeWorkflowID = nil
+                $0.lastRunWorkflowID = WorkflowDefinition.helloWorld.id
                 $0.lastRunSucceeded = result.exitCode == 0
                 $0.statusMessage = result.exitCode == 0
                     ? "Created and deleted HelloWorld.txt in \(project.name)."
                     : "Workflow failed with exit code \(result.exitCode)."
+            }
+        }
+    }
+
+    private func runImplementationReviewLoop() {
+        guard let project = state.selectedProject else { return }
+
+        let request = ImplementationReviewWorkflowRequest(
+            planRelativePath: state.implementationPlanPath,
+            buildCommand: state.implementationBuildCommand
+        )
+
+        update {
+            $0.isRunning = true
+            $0.activeWorkflowID = WorkflowDefinition.implementationReviewLoop.id
+            $0.statusMessage = "Running Implementation Review Loop..."
+            $0.timelineOutput = "Step 0 - Preparing implementation review loop..."
+            $0.stepRecords = []
+            $0.output = ""
+            $0.debugLogURL = nil
+            $0.lastRunSucceeded = nil
+        }
+
+        Task {
+            let result = await workflowRunner.runImplementationReviewLoop(
+                in: project,
+                request: request,
+                progress: { [weak self] progress in
+                    await MainActor.run {
+                        self?.update {
+                            $0.timelineOutput = progress.timeline
+                            $0.debugLogURL = progress.debugLogURL
+                            $0.stepRecords = progress.stepRecords
+                        }
+                    }
+                }
+            )
+            update {
+                $0.output = result.output
+                $0.debugLogURL = result.debugLogURL
+                $0.stepRecords = result.stepRecords
+                $0.timelineOutput = result.timeline.isEmpty ? result.output : result.timeline
+                $0.isRunning = false
+                $0.activeWorkflowID = nil
+                $0.lastRunWorkflowID = WorkflowDefinition.implementationReviewLoop.id
+                $0.lastRunSucceeded = result.exitCode == 0
+                $0.statusMessage = result.exitCode == 0
+                    ? "Implementation Review Loop completed for \(project.name)."
+                    : "Implementation Review Loop failed with exit code \(result.exitCode)."
             }
         }
     }

@@ -83,7 +83,7 @@ public struct TaskWorkspacePage: View {
         }
         .padding(.horizontal, theme.spacing.large)
         .padding(.vertical, theme.spacing.medium)
-        .background(.bar)
+        .background(theme.colors.panelBackground)
     }
 
     private var providerSettingsPresented: Binding<Bool> {

@@ -36,6 +36,7 @@ This folder captures the current direction for Hephaestus as an agent system.
 - [0006. Package Boundaries And Cross-Package Deep Links](./adr/0006-package-boundaries-and-cross-package-deep-links.md): defines local package boundaries and route-input based deep links across packages.
 - [0007. Headless Runtime Entrypoint](./adr/0007-headless-runtime-entrypoint.md): defines headless support so the runtime can be exercised from a CLI or tests without requiring the SwiftUI app.
 - [0008. Local App State Storage](./adr/0008-local-app-state-storage.md): defines the first durable storage boundary for provider settings, chat history, context traces, and run inspection summaries.
+- [0012. External Swift Workflow Packages](./adr/0012-external-swift-workflow-packages.md): defines the proposed out-of-process Swift package model for user-authored workflows.
 
 ## Current Direction
 

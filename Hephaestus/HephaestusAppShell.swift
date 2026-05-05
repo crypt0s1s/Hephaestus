@@ -1,4 +1,5 @@
 import Anvil
+import AnvilTheme
 import Foundation
 import HephaestusComposition
 import HephaestusObservation
@@ -9,7 +10,35 @@ import TaskWorkspaceContracts
 
 @MainActor
 struct HephaestusAppShell: View {
+    private enum AppMode: String, CaseIterable, Identifiable {
+        case workflows
+        case tasks
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .workflows:
+                "Workflows"
+            case .tasks:
+                "Tasks"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .workflows:
+                "point.3.connected.trianglepath.dotted"
+            case .tasks:
+                "text.bubble"
+            }
+        }
+    }
+
     @StateObject private var router: Router<AnyRouteInput, AnyModalInput>
+    @StateObject private var workflowRunnerModel = WorkflowRunnerModel()
+    @State private var appMode: AppMode = .workflows
+    @Environment(\.anvilTheme) private var theme
 
     private let registry: DestinationRegistry
     private let runtime: PersistentAppRuntime
@@ -40,11 +69,43 @@ struct HephaestusAppShell: View {
     }
 
     var body: some View {
-        RouteHost(
-            router: router,
-            registry: registry,
-            context: buildContext()
-        )
+        VStack(spacing: 0) {
+            modeBar
+
+            Divider()
+
+            switch appMode {
+            case .workflows:
+                WorkflowRunnerView(model: workflowRunnerModel)
+            case .tasks:
+                RouteHost(
+                    router: router,
+                    registry: registry,
+                    context: buildContext()
+                )
+            }
+        }
+    }
+
+    private var modeBar: some View {
+        HStack(spacing: 12) {
+            ForEach(AppMode.allCases) { mode in
+                Button {
+                    appMode = mode
+                } label: {
+                    Label(mode.title, systemImage: mode.systemImage)
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(appMode == mode ? .accentColor : nil)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(theme.colors.panelBackground)
     }
 
     private func buildContext() -> RouteBuildContext {

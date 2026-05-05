@@ -17,7 +17,7 @@ public struct AnvilLogSurface: View {
         ScrollView {
             Text(text)
                 .font(theme.typography.code)
-                .foregroundStyle(theme.colors.textPrimary)
+                .foregroundStyle(Color(red: 0.910, green: 0.940, blue: 0.980))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
                 .padding(theme.spacing.medium)

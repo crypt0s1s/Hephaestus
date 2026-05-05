@@ -8,12 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		210F78112F8E4C850000B61B /* Anvil in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78162F8E4C850000B61B /* Anvil */; };
-		210F78272F8E4C850000B61B /* AnvilTheme in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78252F8E4C850000B61B /* AnvilTheme */; };
-		210F78282F8E4C850000B61B /* AnvilUI in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78262F8E4C850000B61B /* AnvilUI */; };
 		210F78122F8E4C850000B61B /* TaskWorkspaceContracts in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78172F8E4C850000B61B /* TaskWorkspaceContracts */; };
 		210F78132F8E4C850000B61B /* TaskWorkspaceFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78182F8E4C850000B61B /* TaskWorkspaceFeature */; };
 		210F78142F8E4C850000B61B /* HephaestusComposition in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78192F8E4C850000B61B /* HephaestusComposition */; };
 		210F78152F8E4C850000B61B /* HephaestusRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 210F781A2F8E4C850000B61B /* HephaestusRuntime */; };
+		210F78272F8E4C850000B61B /* AnvilTheme in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78252F8E4C850000B61B /* AnvilTheme */; };
+		210F78282F8E4C850000B61B /* AnvilUI in Frameworks */ = {isa = PBXBuildFile; productRef = 210F78262F8E4C850000B61B /* AnvilUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -622,14 +622,6 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Anvil/Anvil;
 		};
-		210F78292F8E4C850000B61B /* XCLocalSwiftPackageReference "Anvil/AnvilTheme" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = Anvil/AnvilTheme;
-		};
-		210F782A2F8E4C850000B61B /* XCLocalSwiftPackageReference "Anvil/AnvilUI" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = Anvil/AnvilUI;
-		};
 		210F78212F8E4C850000B61B /* XCLocalSwiftPackageReference "Features/TaskWorkspaceContracts" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Features/TaskWorkspaceContracts;
@@ -646,6 +638,14 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Core/HephaestusRuntime;
 		};
+		210F78292F8E4C850000B61B /* XCLocalSwiftPackageReference "Anvil/AnvilTheme" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Anvil/AnvilTheme;
+		};
+		210F782A2F8E4C850000B61B /* XCLocalSwiftPackageReference "Anvil/AnvilUI" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Anvil/AnvilUI;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -653,16 +653,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 210F78202F8E4C850000B61B /* XCLocalSwiftPackageReference "Anvil/Anvil" */;
 			productName = Anvil;
-		};
-		210F78252F8E4C850000B61B /* AnvilTheme */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 210F78292F8E4C850000B61B /* XCLocalSwiftPackageReference "Anvil/AnvilTheme" */;
-			productName = AnvilTheme;
-		};
-		210F78262F8E4C850000B61B /* AnvilUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 210F782A2F8E4C850000B61B /* XCLocalSwiftPackageReference "Anvil/AnvilUI" */;
-			productName = AnvilUI;
 		};
 		210F78172F8E4C850000B61B /* TaskWorkspaceContracts */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -683,6 +673,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 210F78242F8E4C850000B61B /* XCLocalSwiftPackageReference "Core/HephaestusRuntime" */;
 			productName = HephaestusRuntime;
+		};
+		210F78252F8E4C850000B61B /* AnvilTheme */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 210F78292F8E4C850000B61B /* XCLocalSwiftPackageReference "Anvil/AnvilTheme" */;
+			productName = AnvilTheme;
+		};
+		210F78262F8E4C850000B61B /* AnvilUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 210F782A2F8E4C850000B61B /* XCLocalSwiftPackageReference "Anvil/AnvilUI" */;
+			productName = AnvilUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

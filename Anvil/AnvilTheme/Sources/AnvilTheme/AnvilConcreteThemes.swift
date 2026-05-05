@@ -22,22 +22,22 @@ public extension AnvilColors {
     static let anvilWorkbench = AnvilColors.fallback
 
     static let hephaestus = AnvilColors(
-        windowBackground: Color(red: 0.090, green: 0.067, blue: 0.055),
-        sidebarBackground: Color(red: 0.125, green: 0.092, blue: 0.073),
-        panelBackground: Color(red: 0.158, green: 0.117, blue: 0.091),
-        elevatedPanelBackground: Color(red: 0.205, green: 0.145, blue: 0.108),
-        logBackground: Color(red: 0.061, green: 0.047, blue: 0.041),
-        selectionBackground: Color(red: 0.770, green: 0.167, blue: 0.100).opacity(0.24),
-        border: Color(red: 0.995, green: 0.484, blue: 0.314).opacity(0.18),
-        separator: Color(red: 0.995, green: 0.484, blue: 0.314).opacity(0.13),
-        textPrimary: Color(red: 0.980, green: 0.943, blue: 0.884),
-        textSecondary: Color(red: 0.760, green: 0.675, blue: 0.594),
-        textTertiary: Color(red: 0.560, green: 0.486, blue: 0.421),
-        accent: Color(red: 0.906, green: 0.212, blue: 0.118),
-        accentForeground: Color(red: 1.000, green: 0.965, blue: 0.910),
-        success: Color(red: 0.373, green: 0.706, blue: 0.431),
-        warning: Color(red: 0.965, green: 0.596, blue: 0.208),
-        danger: Color(red: 1.000, green: 0.286, blue: 0.224)
+        windowBackground: Color(red: 0.965, green: 0.967, blue: 0.970),
+        sidebarBackground: Color(red: 0.925, green: 0.932, blue: 0.940),
+        panelBackground: Color(red: 0.985, green: 0.986, blue: 0.988),
+        elevatedPanelBackground: Color(red: 1.000, green: 1.000, blue: 1.000),
+        logBackground: Color(red: 0.102, green: 0.110, blue: 0.122),
+        selectionBackground: Color(red: 0.208, green: 0.455, blue: 0.760).opacity(0.14),
+        border: Color(red: 0.128, green: 0.145, blue: 0.168).opacity(0.10),
+        separator: Color(red: 0.128, green: 0.145, blue: 0.168).opacity(0.12),
+        textPrimary: Color(red: 0.090, green: 0.101, blue: 0.120),
+        textSecondary: Color(red: 0.325, green: 0.355, blue: 0.395),
+        textTertiary: Color(red: 0.540, green: 0.570, blue: 0.610),
+        accent: Color(red: 0.208, green: 0.455, blue: 0.760),
+        accentForeground: Color.white,
+        success: Color(red: 0.100, green: 0.565, blue: 0.335),
+        warning: Color(red: 0.780, green: 0.435, blue: 0.120),
+        danger: Color(red: 0.780, green: 0.185, blue: 0.170)
     )
 }
 

@@ -1,5 +1,6 @@
 import AnvilTheme
 import AnvilUI
+import AppKit
 import SwiftUI
 
 struct WorkflowRunnerView: View {
@@ -171,11 +172,21 @@ private struct WorkflowDetail: View {
                                 workflow: workflow,
                                 isExpanded: model.state.isWorkflowExpanded(workflow),
                                 isRunning: model.state.isRunning,
+                                isActive: model.state.activeWorkflowID == workflow.id,
+                                lastRunSucceeded: model.state.lastRunWorkflowID == workflow.id ? model.state.lastRunSucceeded : nil,
+                                implementationPlanPath: Binding(
+                                    get: { model.state.implementationPlanPath },
+                                    set: { model.updateImplementationPlanPath($0) }
+                                ),
+                                implementationBuildCommand: Binding(
+                                    get: { model.state.implementationBuildCommand },
+                                    set: { model.updateImplementationBuildCommand($0) }
+                                ),
                                 toggleExpansion: {
                                     model.toggleWorkflowExpansion(workflow)
                                 },
                                 run: {
-                                    model.runHelloWorldWorkflow()
+                                    model.runWorkflow(workflow)
                                 }
                             )
                         }
@@ -187,8 +198,13 @@ private struct WorkflowDetail: View {
                             )
                         }
 
-                        if !model.state.output.isEmpty {
-                            AnvilLogSurface(model.state.output)
+                        if !model.state.timelineOutput.isEmpty || !model.state.output.isEmpty {
+                            WorkflowRunOutput(
+                                timeline: model.state.timelineOutput,
+                                stepRecords: model.state.stepRecords,
+                                fullLog: model.state.output,
+                                debugLogURL: model.state.debugLogURL
+                            )
                         }
                     }
                 }
@@ -196,50 +212,5 @@ private struct WorkflowDetail: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(theme.spacing.xLarge)
         }
-    }
-}
-
-private struct WorkflowRow: View {
-    let workflow: WorkflowDefinition
-    let isExpanded: Bool
-    let isRunning: Bool
-    let toggleExpansion: () -> Void
-    let run: () -> Void
-    @Environment(\.anvilTheme) private var theme
-
-    var body: some View {
-        AnvilDisclosureRow(
-            title: workflow.title,
-            subtitle: workflow.subtitle,
-            systemImage: "doc.badge.plus",
-            isExpanded: isExpanded,
-            onToggle: toggleExpansion
-        ) {
-            Button(action: run) {
-                Label(isRunning ? "Running" : "Run", systemImage: isRunning ? "hourglass" : "play.fill")
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(theme.colors.accent)
-            .disabled(isRunning)
-        } content: {
-            VStack(alignment: .leading, spacing: theme.spacing.medium) {
-                ForEach(Array(workflow.steps.enumerated()), id: \.element.id) { index, step in
-                    WorkflowStepRow(step: step, stepNumber: index + 1)
-                }
-            }
-        }
-    }
-}
-
-private struct WorkflowStepRow: View {
-    let step: WorkflowStepDefinition
-    let stepNumber: Int
-
-    var body: some View {
-        AnvilNumberedRow(
-            number: stepNumber,
-            title: step.title,
-            subtitle: step.subtitle
-        )
     }
 }

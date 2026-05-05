@@ -20,5 +20,6 @@ struct HephaestusRootView: View {
             }
         }
         .anvilTheme(.hephaestus)
+        .preferredColorScheme(.light)
     }
 }
