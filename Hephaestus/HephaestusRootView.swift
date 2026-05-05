@@ -11,12 +11,14 @@ struct HephaestusRootView: View {
     }
 
     var body: some View {
-        switch result {
-        case .success(let shell):
-            shell
-                .anvilTheme(.hephaestus)
-        case .failure(let error):
-            StartupErrorView(error: error)
+        Group {
+            switch result {
+            case .success(let shell):
+                shell
+            case .failure(let error):
+                StartupErrorView(error: error)
+            }
         }
+        .anvilTheme(.hephaestus)
     }
 }

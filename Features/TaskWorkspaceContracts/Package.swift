@@ -11,7 +11,7 @@ let package = Package(
         .library(name: "TaskWorkspaceContracts", targets: ["TaskWorkspaceContracts"])
     ],
     dependencies: [
-        .package(path: "../../Core/Anvil")
+        .package(path: "../../Anvil/Anvil")
     ],
     targets: [
         .target(

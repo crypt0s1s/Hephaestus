@@ -26,16 +26,16 @@ let package = Package(
     targets: [
         .target(
             name: "Anvil",
-            path: "Core/Anvil/Sources/Anvil"
+            path: "Anvil/Anvil/Sources/Anvil"
         ),
         .target(
             name: "AnvilTheme",
-            path: "Core/AnvilTheme/Sources/AnvilTheme"
+            path: "Anvil/AnvilTheme/Sources/AnvilTheme"
         ),
         .target(
             name: "AnvilUI",
             dependencies: ["AnvilTheme"],
-            path: "Core/AnvilUI/Sources/AnvilUI"
+            path: "Anvil/AnvilUI/Sources/AnvilUI"
         ),
         .target(
             name: "HephaestusDomain",

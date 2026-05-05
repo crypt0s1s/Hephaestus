@@ -49,10 +49,10 @@ private struct ProjectSidebar: View {
             .padding(.top, theme.spacing.xLarge)
 
             if model.state.projects.isEmpty {
-                ContentUnavailableView(
-                    "No projects",
-                    systemImage: "folder",
-                    description: Text("Select a project folder to run a workflow.")
+                AnvilEmptyState(
+                    title: "No projects",
+                    message: "Select a project folder to run a workflow.",
+                    systemImage: "folder"
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -107,10 +107,10 @@ private struct WorkflowDetail: View {
             if let project = model.state.selectedProject {
                 selectedProjectContent(project)
             } else {
-                ContentUnavailableView(
-                    "Select a project",
-                    systemImage: "folder",
-                    description: Text("Choose a folder from the sidebar to run a workflow.")
+                AnvilEmptyState(
+                    title: "Select a project",
+                    message: "Choose a folder from the sidebar to run a workflow.",
+                    systemImage: "folder"
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -146,49 +146,50 @@ private struct WorkflowDetail: View {
     private func selectedProjectContent(_ project: WorkflowProject) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: theme.spacing.large) {
-                HStack(spacing: theme.spacing.medium) {
-                    Label(
-                        model.state.branchName(for: project) ?? "No git branch detected",
-                        systemImage: "point.3.connected.trianglepath.dotted"
-                    )
-                    .font(theme.typography.body)
-                    .foregroundStyle(theme.colors.textSecondary)
+                AnvilSurface {
+                    HStack(spacing: theme.spacing.medium) {
+                        AnvilIconTile(systemName: "point.3.connected.trianglepath.dotted")
 
-                    Spacer()
+                        AnvilStatusPill(model.state.branchName(for: project) ?? "No git branch detected")
 
-                    AnvilIconButton(
-                        systemName: "arrow.clockwise",
-                        accessibilityLabel: "Refresh",
-                        help: "Refresh branch"
-                    ) {
-                        model.refreshSelectedProject()
+                        Spacer()
+
+                        AnvilIconButton(
+                            systemName: "arrow.clockwise",
+                            accessibilityLabel: "Refresh",
+                            help: "Refresh branch"
+                        ) {
+                            model.refreshSelectedProject()
+                        }
                     }
                 }
 
-                VStack(alignment: .leading, spacing: theme.spacing.medium) {
-                    ForEach(model.state.workflows) { workflow in
-                        WorkflowRow(
-                            workflow: workflow,
-                            isExpanded: model.state.isWorkflowExpanded(workflow),
-                            isRunning: model.state.isRunning,
-                            toggleExpansion: {
-                                model.toggleWorkflowExpansion(workflow)
-                            },
-                            run: {
-                                model.runHelloWorldWorkflow()
-                            }
-                        )
-                    }
+                AnvilPanelSection(title: "Workflows") {
+                    VStack(alignment: .leading, spacing: theme.spacing.medium) {
+                        ForEach(model.state.workflows) { workflow in
+                            WorkflowRow(
+                                workflow: workflow,
+                                isExpanded: model.state.isWorkflowExpanded(workflow),
+                                isRunning: model.state.isRunning,
+                                toggleExpansion: {
+                                    model.toggleWorkflowExpansion(workflow)
+                                },
+                                run: {
+                                    model.runHelloWorldWorkflow()
+                                }
+                            )
+                        }
 
-                    if let statusMessage = model.state.statusMessage {
-                        AnvilStatusText(
-                            statusMessage,
-                            tone: model.state.lastRunSucceeded == false ? .danger : .neutral
-                        )
-                    }
+                        if let statusMessage = model.state.statusMessage {
+                            AnvilBanner(
+                                message: statusMessage,
+                                tone: model.state.lastRunSucceeded == false ? .danger : .neutral
+                            )
+                        }
 
-                    if !model.state.output.isEmpty {
-                        AnvilLogSurface(model.state.output)
+                        if !model.state.output.isEmpty {
+                            AnvilLogSurface(model.state.output)
+                        }
                     }
                 }
             }
@@ -233,30 +234,12 @@ private struct WorkflowRow: View {
 private struct WorkflowStepRow: View {
     let step: WorkflowStepDefinition
     let stepNumber: Int
-    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        HStack(alignment: .top, spacing: theme.spacing.medium) {
-            Text("\(stepNumber)")
-                .font(theme.typography.caption.weight(.semibold))
-                .foregroundStyle(theme.colors.textSecondary)
-                .frame(width: stepBadgeSize, height: stepBadgeSize)
-                .background(theme.colors.selectionBackground)
-                .clipShape(Circle())
-
-            VStack(alignment: .leading, spacing: theme.spacing.xSmall) {
-                Text(step.title)
-                    .font(theme.typography.body.weight(.medium))
-                    .foregroundStyle(theme.colors.textPrimary)
-                Text(step.subtitle)
-                    .font(theme.typography.caption)
-                    .foregroundStyle(theme.colors.textSecondary)
-            }
-
-            Spacer()
-        }
-        .padding(.vertical, theme.spacing.xxSmall)
+        AnvilNumberedRow(
+            number: stepNumber,
+            title: step.title,
+            subtitle: step.subtitle
+        )
     }
-
-    private var stepBadgeSize: CGFloat { 20 }
 }

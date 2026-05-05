@@ -11,9 +11,9 @@ let package = Package(
         .library(name: "TaskWorkspaceFeature", targets: ["TaskWorkspaceFeature"])
     ],
     dependencies: [
-        .package(path: "../../Core/Anvil"),
-        .package(path: "../../Core/AnvilTheme"),
-        .package(path: "../../Core/AnvilUI"),
+        .package(path: "../../Anvil/Anvil"),
+        .package(path: "../../Anvil/AnvilTheme"),
+        .package(path: "../../Anvil/AnvilUI"),
         .package(path: "../../Core/HephaestusDomain"),
         .package(path: "../../Core/HephaestusKernel"),
         .package(path: "../../Core/HephaestusObservation"),

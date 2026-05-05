@@ -11,11 +11,9 @@ public struct AnvilRadii: Sendable {
         self.large = large
     }
 
-    public static let workbench = AnvilRadii(
+    public static let fallback = AnvilRadii(
         small: 6,
         medium: 8,
         large: 10
     )
-
-    public static let hephaestus = AnvilRadii.workbench
 }

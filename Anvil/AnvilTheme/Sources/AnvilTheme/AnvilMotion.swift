@@ -9,10 +9,8 @@ public struct AnvilMotion: Sendable {
         self.standard = standard
     }
 
-    public static let workbench = AnvilMotion(
+    public static let fallback = AnvilMotion(
         quick: 0.12,
         standard: 0.18
     )
-
-    public static let hephaestus = AnvilMotion.workbench
 }

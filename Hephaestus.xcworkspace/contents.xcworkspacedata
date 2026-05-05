@@ -4,9 +4,19 @@
    <FileRef
       location = "container:Hephaestus.xcodeproj">
    </FileRef>
-   <FileRef
-      location = "container:Core/Anvil">
-   </FileRef>
+   <Group
+      location = "container:"
+      name = "Anvil">
+      <FileRef
+         location = "container:Anvil/Anvil">
+      </FileRef>
+      <FileRef
+         location = "container:Anvil/AnvilTheme">
+      </FileRef>
+      <FileRef
+         location = "container:Anvil/AnvilUI">
+      </FileRef>
+   </Group>
    <FileRef
       location = "container:Core/HephaestusDomain">
    </FileRef>

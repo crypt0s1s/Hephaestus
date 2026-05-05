@@ -27,7 +27,7 @@ public struct AnvilSpacing: Sendable {
         self.xxLarge = xxLarge
     }
 
-    public static let workbench = AnvilSpacing(
+    public static let fallback = AnvilSpacing(
         xxSmall: 2,
         xSmall: 4,
         small: 8,
@@ -36,6 +36,4 @@ public struct AnvilSpacing: Sendable {
         xLarge: 24,
         xxLarge: 32
     )
-
-    public static let hephaestus = AnvilSpacing.workbench
 }

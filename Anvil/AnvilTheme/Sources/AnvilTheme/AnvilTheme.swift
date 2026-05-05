@@ -21,25 +21,18 @@ public struct AnvilTheme: Sendable {
         self.motion = motion
     }
 
-    public static let workbench = AnvilTheme(
-        colors: .workbench,
-        spacing: .workbench,
-        typography: .workbench,
-        radii: .workbench,
-        motion: .workbench
-    )
-
-    public static let hephaestus = AnvilTheme(
-        colors: .hephaestus,
-        spacing: .hephaestus,
-        typography: .hephaestus,
-        radii: .hephaestus,
-        motion: .hephaestus
+    /// Infrastructure fallback used when no concrete theme is injected.
+    public static let fallback = AnvilTheme(
+        colors: .fallback,
+        spacing: .fallback,
+        typography: .fallback,
+        radii: .fallback,
+        motion: .fallback
     )
 }
 
 private struct AnvilThemeKey: EnvironmentKey {
-    static let defaultValue = AnvilTheme.hephaestus
+    static let defaultValue = AnvilTheme.fallback
 }
 
 public extension EnvironmentValues {

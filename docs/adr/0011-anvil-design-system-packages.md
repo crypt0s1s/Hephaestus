@@ -128,8 +128,8 @@ The project needs a shared design-system boundary that prevents every feature fr
 
 Hephaestus will introduce two separate Anvil-family design-system packages:
 
-- `AnvilTheme`: core theme implementation, semantic color roles, typography roles, spacing, radii, and animation constants.
-- `AnvilUI`: reusable base UI components and modifiers built on top of `AnvilTheme`.
+- `AnvilTheme`: theme implementation, concrete theme presets, semantic color roles, typography roles, spacing, radii, animation constants, and SwiftUI environment plumbing.
+- `AnvilUI`: reusable rendered UI components and modifiers built on top of `AnvilTheme`.
 
 `Anvil` remains the generic app architecture package for interactor/page/router/task-scope/state primitives. It should not absorb theme or component code.
 
@@ -139,7 +139,7 @@ Hephaestus will introduce two separate Anvil-family design-system packages:
 
 The design-system foundation is generic enough to live with Anvil, but it is not the same responsibility as routing, page ownership, and interactor lifecycle. Separate packages preserve that distinction.
 
-`AnvilTheme` should be the lowest-level visual layer. It should expose semantic roles rather than one-off raw colors, for example:
+`AnvilTheme` should define the Anvil design language. It should expose semantic roles rather than one-off raw colors, for example:
 
 - window background,
 - sidebar background,
@@ -166,13 +166,14 @@ public struct AnvilTheme {
 The initial Anvil version should:
 
 - use SwiftUI environment values as the main consumption path,
-- support light and dark color roles,
+- support concrete Anvil theme presets such as `.anvilWorkbench`,
+- allow app/product presets such as `.hephaestus` in `AnvilTheme`, mirroring Kinetic iOS where `Combustion` owns concrete `KineticTheme` / `ElectricityTheme` presets and `CombustionUI` owns rendered components,
 - keep token names semantic rather than brand-specific,
 - adapt color roles for macOS workbench surfaces,
 - use a small semantic spacing scale, and
 - omit iOS-only concepts such as status bar style.
 
-`AnvilUI` should consume `AnvilTheme` and provide small, reusable base components. Initial candidates should come from actual repeated patterns, such as:
+`AnvilUI` should consume `AnvilTheme` and provide small, reusable rendered components. Initial candidates should come from actual repeated patterns, such as:
 
 - icon-only toolbar buttons,
 - sidebar rows,
@@ -183,7 +184,7 @@ The initial Anvil version should:
 
 Product concepts should remain outside these packages. `AnvilUI` can provide a disclosure-row shell, sidebar-row shell, list-row shell, or status-row shell, but it should not know what a Hephaestus workflow, task, run, or step is. Feature packages should provide the domain text, actions, step definitions, and state.
 
-This amends the package direction sketched in ADR-0006. Where ADR-0006 mentions `HephaestusTheme` and `HephaestusUI`, the preferred design-system package names are now `AnvilTheme` and `AnvilUI`. If Hephaestus-specific visual identity or product-only composite components later need their own home, that should be decided separately without moving generic base primitives out of the Anvil family.
+This amends the package direction sketched in ADR-0006. Where ADR-0006 mentions `HephaestusTheme` and `HephaestusUI`, the preferred design-system package names are now `AnvilTheme` and `AnvilUI`. Product-branded theme presets may live in `AnvilTheme` when they are token-only concrete themes. Product-only rendered composite components should still be decided separately without moving generic base primitives out of the Anvil family.
 
 ---
 
@@ -202,7 +203,7 @@ This amends the package direction sketched in ADR-0006. Where ADR-0006 mentions 
 - Two additional packages increase package graph surface area.
 - Some early components may need to move or be renamed as patterns become clearer.
 - Review discipline is required to prevent product-specific concepts from entering `AnvilUI`.
-- Hephaestus-specific visual identity or product-only composite components will need an app/product-owned home if they outgrow generic Anvil primitives.
+- Product-only rendered composite components will need an app/product-owned home if they outgrow generic Anvil primitives.
 
 ### Neutral
 
@@ -219,7 +220,7 @@ This amends the package direction sketched in ADR-0006. Where ADR-0006 mentions 
 The intended package layout is:
 
 ```text
-Core/
+Anvil/
   Anvil/
     Package.swift
     Sources/Anvil/
@@ -243,11 +244,9 @@ Core/
   AnvilUI/
     Package.swift
     Sources/AnvilUI/
-      Buttons/
-      Rows/
-      Panels/
-      Status/
-      Logs/
+      Atoms/
+      Molecules/
+      Components/
 ```
 
 ### Dependency Rules
@@ -297,12 +296,13 @@ Avoid extracting large product-specific workflow cards or task screens at first.
 ### Migration Strategy
 
 1. Create `AnvilTheme` and `AnvilUI` package scaffolds.
-2. Add a minimal token set in `AnvilTheme`: semantic colors, spacing, radii, and typography roles needed by the first components.
-3. Extract `AnvilIconButton`, `AnvilDisclosureRow`, `AnvilSidebarRow`, `AnvilStatusText`, and `AnvilLogSurface` into `AnvilUI`.
-4. Adopt those components in the workflow runner first.
-5. Adopt the same primitives in `TaskWorkspaceFeature`.
-6. Do not add more components until the first slice works in both call sites without feature-specific parameters.
-7. Mark new public APIs as experimental in doc comments until they have at least two real call sites; promote them by removing the experimental note once the second call site proves the shape.
+2. Add theme presets, token containers, and environment plumbing in `AnvilTheme`.
+3. Keep `AnvilUI` focused on rendered UI elements.
+4. Extract `AnvilIconButton`, `AnvilDisclosureRow`, `AnvilSidebarRow`, `AnvilStatusText`, and `AnvilLogSurface` into `AnvilUI`.
+5. Adopt those components in the workflow runner first.
+6. Adopt the same primitives in `TaskWorkspaceFeature`.
+7. Do not add more components until the first slice works in both call sites without feature-specific parameters.
+8. Mark new public APIs as experimental in doc comments until they have at least two real call sites; promote them by removing the experimental note once the second call site proves the shape.
 
 ### Theme Consumption Shape
 
@@ -310,15 +310,14 @@ The expected application API should look like:
 
 ```swift
 HephaestusRootView()
-    .anvilTheme(.workbench)
+    .anvilTheme(.anvilWorkbench)
 ```
 
-`AnvilTheme` should own generic presets such as `.workbench`. If a product-branded preset is needed, the app or product layer should own that extension:
+`AnvilTheme` should own the infrastructure for injecting and reading a theme, plus concrete Anvil and product presets such as `.anvilWorkbench` and `.hephaestus`:
 
 ```swift
-extension AnvilTheme {
-    static let productWorkbench = AnvilTheme.workbench
-}
+HephaestusRootView()
+    .anvilTheme(.hephaestus)
 ```
 
 Feature views can consume the theme directly for layout composition and one-off feature-specific content:

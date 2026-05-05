@@ -6,6 +6,7 @@ public struct AnvilTypography: Sendable {
     public var rowTitle: Font
     public var body: Font
     public var caption: Font
+    public var smallCaption: Font
     public var status: Font
     public var code: Font
 
@@ -15,6 +16,7 @@ public struct AnvilTypography: Sendable {
         rowTitle: Font,
         body: Font,
         caption: Font,
+        smallCaption: Font,
         status: Font,
         code: Font
     ) {
@@ -23,19 +25,19 @@ public struct AnvilTypography: Sendable {
         self.rowTitle = rowTitle
         self.body = body
         self.caption = caption
+        self.smallCaption = smallCaption
         self.status = status
         self.code = code
     }
 
-    public static let workbench = AnvilTypography(
+    public static let fallback = AnvilTypography(
         pageTitle: .title2.weight(.semibold),
         sectionTitle: .title2.weight(.medium),
         rowTitle: .headline,
         body: .callout,
         caption: .caption,
+        smallCaption: .caption2,
         status: .callout,
         code: .system(.caption, design: .monospaced)
     )
-
-    public static let hephaestus = AnvilTypography.workbench
 }
