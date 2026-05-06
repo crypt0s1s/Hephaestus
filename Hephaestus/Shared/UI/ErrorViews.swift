@@ -7,8 +7,8 @@ struct StartupErrorView: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.large) {
-            HStack(spacing: theme.spacing.medium) {
+        VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
+            HStack(spacing: theme.spacing.cozy) {
                 AnvilIconTile(systemName: "exclamationmark.triangle.fill", tone: .danger)
 
                 Text("Hephaestus could not start")
@@ -22,7 +22,7 @@ struct StartupErrorView: View {
                 systemImage: "xmark.octagon.fill"
             )
         }
-        .padding(theme.spacing.xLarge)
+        .padding(theme.spacing.roomy)
         .frame(minWidth: 520, minHeight: 320)
         .background(theme.colors.windowBackground)
     }
@@ -33,7 +33,7 @@ struct RouteErrorView: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.large) {
+        VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
             AnvilPanelSection(title: "Screen could not be opened") {
                 AnvilSurface(tone: .danger) {
                     Text(String(describing: error))
@@ -43,7 +43,7 @@ struct RouteErrorView: View {
                 }
             }
         }
-        .padding(theme.spacing.xLarge)
+        .padding(theme.spacing.roomy)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(theme.colors.windowBackground)
     }

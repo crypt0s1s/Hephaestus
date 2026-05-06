@@ -8,13 +8,13 @@ struct RunInspectorSheet: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.large) {
+        VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
             Text("Run Inspector")
                 .font(theme.typography.pageTitle)
                 .foregroundStyle(theme.colors.textPrimary)
             content
         }
-        .padding(theme.spacing.xLarge)
+        .padding(theme.spacing.roomy)
         .frame(width: 720, height: 620)
         .accessibilityIdentifier(TaskWorkspaceAccessibilityID.inspectorPanel)
     }
@@ -39,8 +39,8 @@ struct RunInspectorSheet: View {
     }
 
     private var loadingState: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.large) {
-            HStack(spacing: theme.spacing.small) {
+        VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
+            HStack(spacing: theme.spacing.compact) {
                 ProgressView()
                     .controlSize(.small)
                 AnvilStatusText("Loading run details")
@@ -56,7 +56,7 @@ struct RunInspectionContent: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: theme.spacing.large) {
+            VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
                 timelineSection
                 turnsSection
                 providerSection
@@ -121,7 +121,7 @@ struct RuntimeEventRow: View {
 
     var body: some View {
         AnvilSurface(tone: event.error == nil ? .neutral : .danger) {
-            VStack(alignment: .leading, spacing: theme.spacing.xSmall) {
+            VStack(alignment: .leading, spacing: theme.spacing.squishy) {
                 AnvilNumberedRow(
                     number: event.sequence,
                     title: event.kind.rawValue,
@@ -167,7 +167,7 @@ struct TurnInspectionRow: View {
 
     var body: some View {
         AnvilSurface(tone: turn.status == .failed ? .danger : .neutral) {
-            VStack(alignment: .leading, spacing: theme.spacing.small) {
+            VStack(alignment: .leading, spacing: theme.spacing.compact) {
                 Text("Turn \(turn.id.uuidString.prefix(8)) - \(turn.status.rawValue)")
                     .font(theme.typography.caption.weight(.semibold))
                 Text("User message: \(shortID(turn.userMessageID))")
@@ -197,7 +197,7 @@ struct ContextTraceRow: View {
 
     var body: some View {
         AnvilSurface {
-            VStack(alignment: .leading, spacing: theme.spacing.small) {
+            VStack(alignment: .leading, spacing: theme.spacing.compact) {
                 Text(trace.policyName)
                     .font(theme.typography.caption.weight(.semibold))
                 if let messageLimit = trace.messageLimit {
@@ -223,7 +223,7 @@ struct ContextMessageList: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.xSmall) {
+        VStack(alignment: .leading, spacing: theme.spacing.squishy) {
             Text(title)
                 .font(theme.typography.smallCaption.weight(.semibold))
                 .foregroundStyle(theme.colors.textSecondary)

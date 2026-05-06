@@ -1,6 +1,7 @@
 import Foundation
 
 struct WorkflowExecutor {
+    private static let reviewerTimeoutSeconds: TimeInterval = 90
     private let codexStep: CodexAgentStep
     private let shellStep: ShellValidationStep
     private let planValidator: PlanFileValidator
@@ -25,7 +26,7 @@ struct WorkflowExecutor {
         progress: WorkflowProgressHandler? = nil
     ) async -> ProcessResult {
         let debugLog = WorkflowDebugLog(projectName: project.name)
-        let debugLogURL = await debugLog.fileURL
+        let debugLogURL = debugLog.directoryURL
         await debugLog.append("""
         == Implementation Review Loop Debug Log ==
         Project: \(project.path)
@@ -36,9 +37,37 @@ struct WorkflowExecutor {
 
         var timeline: [String] = []
         var stepRecords: [WorkflowStepRecord] = []
+        var nextSequenceOrder = 0
+        func setupHierarchy(phaseOrder: Int, outcome: WorkflowStepRecordCycleOutcome? = nil) -> WorkflowStepRecordHierarchy {
+            WorkflowStepRecordHierarchy(
+                groupID: "setup",
+                parentID: nil,
+                cycleIndex: nil,
+                depth: 1,
+                phaseOrder: phaseOrder,
+                cycleOutcome: outcome
+            )
+        }
+        func cycleHierarchy(
+            cycle: Int,
+            parentID: String? = nil,
+            depth: Int = 1,
+            phaseOrder: Int,
+            outcome: WorkflowStepRecordCycleOutcome? = nil
+        ) -> WorkflowStepRecordHierarchy {
+            WorkflowStepRecordHierarchy(
+                groupID: "cycle-\(cycle)",
+                parentID: parentID,
+                cycleIndex: cycle,
+                depth: depth,
+                phaseOrder: phaseOrder,
+                cycleOutcome: outcome
+            )
+        }
         func emit(_ line: String) async {
             timeline.append(line)
             await debugLog.append("[timeline] \(line)\n")
+            await debugLog.append(line + "\n", to: "timeline.log")
             await progress?(WorkflowRunProgress(
                 timeline: timeline.joined(separator: "\n"),
                 debugLogURL: debugLogURL,
@@ -52,9 +81,16 @@ struct WorkflowExecutor {
             summary: String,
             inputPreview: String? = nil,
             outputPreview: String? = nil,
-            sortOrder: Int
+            sortOrder: Int,
+            hierarchy: WorkflowStepRecordHierarchy? = nil
         ) async {
             if let index = stepRecords.firstIndex(where: { $0.id == id }) {
+                var updatedHierarchy = hierarchy
+                if var replacementHierarchy = updatedHierarchy,
+                   let existingHierarchy = stepRecords[index].hierarchy {
+                    replacementHierarchy.sequenceOrder = existingHierarchy.sequenceOrder
+                    updatedHierarchy = replacementHierarchy
+                }
                 stepRecords[index].title = title
                 stepRecords[index].status = status
                 stepRecords[index].summary = summary
@@ -65,7 +101,15 @@ struct WorkflowExecutor {
                     stepRecords[index].outputPreview = outputPreview
                 }
                 stepRecords[index].sortOrder = sortOrder
+                if updatedHierarchy != nil {
+                    stepRecords[index].hierarchy = updatedHierarchy
+                }
             } else {
+                var newHierarchy = hierarchy
+                if newHierarchy != nil {
+                    newHierarchy?.sequenceOrder = nextSequenceOrder
+                    nextSequenceOrder += 1
+                }
                 stepRecords.append(WorkflowStepRecord(
                     id: id,
                     title: title,
@@ -73,7 +117,8 @@ struct WorkflowExecutor {
                     summary: summary,
                     inputPreview: inputPreview,
                     outputPreview: outputPreview,
-                    sortOrder: sortOrder
+                    sortOrder: sortOrder,
+                    hierarchy: newHierarchy
                 ))
             }
             await progress?(WorkflowRunProgress(
@@ -104,7 +149,8 @@ struct WorkflowExecutor {
             status: .inProgress,
             summary: "Checking that the selected markdown plan exists inside the project.",
             inputPreview: request.planRelativePath,
-            sortOrder: 0
+            sortOrder: 0,
+            hierarchy: setupHierarchy(phaseOrder: 0)
         )
         let plan: PlanDocument
         do {
@@ -120,7 +166,8 @@ struct WorkflowExecutor {
                 summary: "Plan validation failed.",
                 inputPreview: request.planRelativePath,
                 outputPreview: output,
-                sortOrder: 0
+                sortOrder: 0,
+                hierarchy: setupHierarchy(phaseOrder: 0)
             )
             return result(
                 exitCode: 2,
@@ -144,7 +191,8 @@ struct WorkflowExecutor {
             summary: "Plan file loaded successfully.",
             inputPreview: plan.relativePath,
             outputPreview: plan.contents,
-            sortOrder: 0
+            sortOrder: 0,
+            hierarchy: setupHierarchy(phaseOrder: 0)
         )
         await emit("Step 0 - Build command resolved: \(request.normalizedBuildCommand).")
         await upsertStep(
@@ -154,19 +202,21 @@ struct WorkflowExecutor {
             summary: "Build command resolved for this run.",
             inputPreview: request.buildCommand,
             outputPreview: request.normalizedBuildCommand,
-            sortOrder: 1
+            sortOrder: 1,
+            hierarchy: setupHierarchy(phaseOrder: 1)
         )
         var latestFeedback = ""
 
         for cycle in 0...request.maxReviewCycles {
             let isInitialImplementation = cycle == 0
             let cycleLabel = isInitialImplementation ? "initial implementation" : "fix cycle \(cycle)"
-            let cycleSortOffset = isInitialImplementation ? 0 : cycle
+            let cycleSortBase = 100 + (cycle * 100)
             let implementerStepID = isInitialImplementation ? "step-1-implementer-initial" : "step-1-implementer-fix-\(cycle)"
             await emit("Step 1 - Implementer started \(cycleLabel).")
             let implementerPrompt = isInitialImplementation
                 ? makeInitialImplementerPrompt(project: project, plan: plan)
                 : makeFixPrompt(project: project, plan: plan, feedback: latestFeedback)
+            await debugLog.append(implementerPrompt, to: "\(implementerStepID)-prompt.md")
             await debugLog.append("""
             == Message to Implementer: \(cycleLabel) ==
             \(implementerPrompt)
@@ -178,7 +228,8 @@ struct WorkflowExecutor {
                 status: .inProgress,
                 summary: "Implementer is running \(cycleLabel).",
                 inputPreview: implementerPrompt,
-                sortOrder: 10 + cycleSortOffset
+                sortOrder: cycleSortBase + 10,
+                hierarchy: cycleHierarchy(cycle: cycle, phaseOrder: 10, outcome: .running)
             )
             let implementerResult = await codexStep.run(CodexAgentInvocation(
                 name: isInitialImplementation ? "Implementer" : "Implementer Fix Cycle \(cycle)",
@@ -187,6 +238,7 @@ struct WorkflowExecutor {
             ))
             log += implementerResult.output + "\n"
             await debugLog.append(implementerResult.output + "\n")
+            await debugLog.append(implementerResult.output, to: "\(implementerStepID)-output.log")
             guard implementerResult.exitCode == 0 else {
                 await emit("Step 1 - Implementer failed with exit code \(implementerResult.exitCode).")
                 await upsertStep(
@@ -196,7 +248,8 @@ struct WorkflowExecutor {
                     summary: "Implementer failed with exit code \(implementerResult.exitCode).",
                     inputPreview: implementerPrompt,
                     outputPreview: implementerResult.output,
-                    sortOrder: 10 + cycleSortOffset
+                    sortOrder: cycleSortBase + 10,
+                    hierarchy: cycleHierarchy(cycle: cycle, phaseOrder: 10, outcome: .terminalFailed)
                 )
                 return result(
                     exitCode: implementerResult.exitCode,
@@ -211,7 +264,8 @@ struct WorkflowExecutor {
                 summary: "Implementer finished \(cycleLabel).",
                 inputPreview: implementerPrompt,
                 outputPreview: implementerResult.output,
-                sortOrder: 10 + cycleSortOffset
+                sortOrder: cycleSortBase + 10,
+                hierarchy: cycleHierarchy(cycle: cycle, phaseOrder: 10)
             )
 
             await emit("Step 2 - Build started after \(cycleLabel).")
@@ -222,7 +276,8 @@ struct WorkflowExecutor {
                 status: .inProgress,
                 summary: "Running build after \(cycleLabel).",
                 inputPreview: request.normalizedBuildCommand,
-                sortOrder: 20 + cycleSortOffset
+                sortOrder: cycleSortBase + 20,
+                hierarchy: cycleHierarchy(cycle: cycle, phaseOrder: 20, outcome: .running)
             )
             let buildResult = await shellStep.run(ShellValidationInvocation(
                 name: isInitialImplementation ? "Build After Implementation" : "Build After Fix Cycle \(cycle)",
@@ -231,6 +286,7 @@ struct WorkflowExecutor {
             ))
             log += buildResult.output + "\n"
             await debugLog.append(buildResult.output + "\n")
+            await debugLog.append(buildResult.output, to: "\(buildStepID)-output.log")
             if buildResult.exitCode != 0 {
                 await emit("Step 2 - Build failed with exit code \(buildResult.exitCode); feedback returned to implementer.")
                 await upsertStep(
@@ -240,7 +296,12 @@ struct WorkflowExecutor {
                     summary: "Build failed with exit code \(buildResult.exitCode).",
                     inputPreview: request.normalizedBuildCommand,
                     outputPreview: buildResult.output,
-                    sortOrder: 20 + cycleSortOffset
+                    sortOrder: cycleSortBase + 20,
+                    hierarchy: cycleHierarchy(
+                        cycle: cycle,
+                        phaseOrder: 20,
+                        outcome: cycle == request.maxReviewCycles ? .terminalFailed : nil
+                    )
                 )
                 latestFeedback = """
                 The build failed after \(isInitialImplementation ? "implementation" : "fix cycle \(cycle)").
@@ -256,7 +317,12 @@ struct WorkflowExecutor {
                     summary: "Build failure feedback was prepared for the implementer.",
                     inputPreview: buildResult.output,
                     outputPreview: latestFeedback,
-                    sortOrder: 40 + cycleSortOffset
+                    sortOrder: cycleSortBase + 40,
+                    hierarchy: cycleHierarchy(
+                        cycle: cycle,
+                        phaseOrder: 40,
+                        outcome: cycle == request.maxReviewCycles ? .terminalFailed : .needsFix
+                    )
                 )
                 if cycle == request.maxReviewCycles {
                     await emit("Step 4 - Loop stopped: max review cycles reached after build failure.")
@@ -275,12 +341,14 @@ struct WorkflowExecutor {
                 summary: "Build passed after \(cycleLabel).",
                 inputPreview: request.normalizedBuildCommand,
                 outputPreview: buildResult.output,
-                sortOrder: 20 + cycleSortOffset
+                sortOrder: cycleSortBase + 20,
+                hierarchy: cycleHierarchy(cycle: cycle, phaseOrder: 20)
             )
 
             let reviewerAPrompt = makeReviewerPrompt(name: "Reviewer A", project: project, plan: plan)
             let reviewerBPrompt = makeReviewerPrompt(name: "Reviewer B", project: project, plan: plan)
             await emit("Step 3.1 - Reviewer A started.")
+            await debugLog.append(reviewerAPrompt, to: "step-3-reviewer-a-\(cycle)-prompt.md")
             await debugLog.append("""
             == Message to Reviewer A ==
             \(reviewerAPrompt)
@@ -292,10 +360,18 @@ struct WorkflowExecutor {
                 status: .inProgress,
                 summary: "Reviewer A is checking the implementation.",
                 inputPreview: reviewerAPrompt,
-                sortOrder: 30 + cycleSortOffset
+                sortOrder: cycleSortBase + 30,
+                hierarchy: cycleHierarchy(
+                    cycle: cycle,
+                    parentID: "cycle-\(cycle)-review",
+                    depth: 2,
+                    phaseOrder: 30,
+                    outcome: .running
+                )
             )
             async let reviewerARun = runReviewer(name: "Reviewer A", project: project, prompt: reviewerAPrompt)
             await emit("Step 3.2 - Reviewer B started.")
+            await debugLog.append(reviewerBPrompt, to: "step-3-reviewer-b-\(cycle)-prompt.md")
             await debugLog.append("""
             == Message to Reviewer B ==
             \(reviewerBPrompt)
@@ -307,7 +383,14 @@ struct WorkflowExecutor {
                 status: .inProgress,
                 summary: "Reviewer B is checking the implementation.",
                 inputPreview: reviewerBPrompt,
-                sortOrder: 31 + cycleSortOffset
+                sortOrder: cycleSortBase + 31,
+                hierarchy: cycleHierarchy(
+                    cycle: cycle,
+                    parentID: "cycle-\(cycle)-review",
+                    depth: 2,
+                    phaseOrder: 31,
+                    outcome: .running
+                )
             )
             async let reviewerBRun = runReviewer(name: "Reviewer B", project: project, prompt: reviewerBPrompt)
             let (reviewerA, reviewerB) = await (reviewerARun, reviewerBRun)
@@ -319,29 +402,75 @@ struct WorkflowExecutor {
                 : "Step 3.2 - Reviewer B passed.")
             log += reviewerA.transcriptBlock + "\n" + reviewerB.transcriptBlock + "\n"
             await debugLog.append(reviewerA.transcriptBlock + "\n" + reviewerB.transcriptBlock + "\n")
+            await debugLog.append(reviewerA.transcriptBlock, to: "step-3-reviewer-a-\(cycle)-output.log")
+            await debugLog.append(reviewerB.transcriptBlock, to: "step-3-reviewer-b-\(cycle)-output.log")
             await upsertStep(
                 id: "step-3-reviewer-a-\(cycle)",
                 title: "Step 3.1 - Reviewer A",
                 status: reviewerA.finding.hasBlockingIssue ? .failed : .succeeded,
-                summary: reviewerA.finding.hasBlockingIssue ? "Reviewer A reported blocking findings." : "Reviewer A passed.",
+                summary: reviewerA.finding.displaySummary,
                 inputPreview: reviewerAPrompt,
-                outputPreview: reviewerA.finding.transcript,
-                sortOrder: 30 + cycleSortOffset
+                outputPreview: reviewerA.finding.displaySummary,
+                sortOrder: cycleSortBase + 30,
+                hierarchy: cycleHierarchy(
+                    cycle: cycle,
+                    parentID: "cycle-\(cycle)-review",
+                    depth: 2,
+                    phaseOrder: 30
+                )
             )
             await upsertStep(
                 id: "step-3-reviewer-b-\(cycle)",
                 title: "Step 3.2 - Reviewer B",
                 status: reviewerB.finding.hasBlockingIssue ? .failed : .succeeded,
-                summary: reviewerB.finding.hasBlockingIssue ? "Reviewer B reported blocking findings." : "Reviewer B passed.",
+                summary: reviewerB.finding.displaySummary,
                 inputPreview: reviewerBPrompt,
-                outputPreview: reviewerB.finding.transcript,
-                sortOrder: 31 + cycleSortOffset
+                outputPreview: reviewerB.finding.displaySummary,
+                sortOrder: cycleSortBase + 31,
+                hierarchy: cycleHierarchy(
+                    cycle: cycle,
+                    parentID: "cycle-\(cycle)-review",
+                    depth: 2,
+                    phaseOrder: 31
+                )
             )
 
             let findings = [reviewerA.finding, reviewerB.finding]
             let blockingFindings = findings.filter(\.hasBlockingIssue)
             if blockingFindings.isEmpty {
                 await emit("Step 4 - Workflow completed: build passed and both reviewers passed.")
+                await upsertStep(
+                    id: "step-3-reviewer-a-\(cycle)",
+                    title: "Step 3.1 - Reviewer A",
+                    status: .succeeded,
+                    summary: reviewerA.finding.displaySummary,
+                    inputPreview: reviewerAPrompt,
+                    outputPreview: reviewerA.finding.displaySummary,
+                    sortOrder: cycleSortBase + 30,
+                    hierarchy: cycleHierarchy(
+                        cycle: cycle,
+                        parentID: "cycle-\(cycle)-review",
+                        depth: 2,
+                        phaseOrder: 30,
+                        outcome: .succeeded
+                    )
+                )
+                await upsertStep(
+                    id: "step-3-reviewer-b-\(cycle)",
+                    title: "Step 3.2 - Reviewer B",
+                    status: .succeeded,
+                    summary: reviewerB.finding.displaySummary,
+                    inputPreview: reviewerBPrompt,
+                    outputPreview: reviewerB.finding.displaySummary,
+                    sortOrder: cycleSortBase + 31,
+                    hierarchy: cycleHierarchy(
+                        cycle: cycle,
+                        parentID: "cycle-\(cycle)-review",
+                        depth: 2,
+                        phaseOrder: 31,
+                        outcome: .succeeded
+                    )
+                )
                 return result(
                     exitCode: 0,
                     output: log + "\nWorkflow passed: build succeeded and both reviewers passed or had no P1/P2 findings.\n"
@@ -349,6 +478,7 @@ struct WorkflowExecutor {
             }
 
             latestFeedback = makeReviewerFeedback(findings: blockingFindings)
+            await debugLog.append(latestFeedback, to: "step-4-feedback-\(cycle).md")
             await debugLog.append("""
             == Message to Implementer: reviewer feedback for next cycle ==
             \(latestFeedback)
@@ -362,7 +492,12 @@ struct WorkflowExecutor {
                 summary: "Blocking reviewer feedback was prepared for the implementer.",
                 inputPreview: blockingFindings.map(\.transcript).joined(separator: "\n\n"),
                 outputPreview: latestFeedback,
-                sortOrder: 40 + cycleSortOffset
+                sortOrder: cycleSortBase + 40,
+                hierarchy: cycleHierarchy(
+                    cycle: cycle,
+                    phaseOrder: 40,
+                    outcome: cycle == request.maxReviewCycles ? .terminalFailed : .needsFix
+                )
             )
             if cycle == request.maxReviewCycles {
                 await emit("Step 4 - Loop stopped: max review cycles reached with unresolved findings.")
@@ -384,7 +519,8 @@ struct WorkflowExecutor {
         let result = await codexStep.run(CodexAgentInvocation(
             name: name,
             project: project,
-            prompt: prompt
+            prompt: prompt,
+            timeoutSeconds: Self.reviewerTimeoutSeconds
         ))
         let transcript = result.exitCode == 0
             ? result.output
@@ -449,12 +585,19 @@ struct WorkflowExecutor {
 
         Rules:
         - Do not edit files.
+        - Review only the current uncommitted implementation diff and the files directly referenced by that diff.
+        - Shell is allowed only for read-only inspection and comparison, such as `git diff`, `git status`, `rg`, `sed`, `nl`, or reading directly touched files.
+        - The workflow build step has already run. Do not run or retry builds, tests, package resolution, dependency installation, executables, scripts, simulators, or app launches.
+        - Do not run commands like `swift build`, `swift test`, `swift run`, `xcodebuild`, `npm test`, `cargo test`, `make`, or any project-specific validation command.
+        - If validation output is needed, rely on the workflow's build result and report only issues visible from the diff/source review.
+        - If you need more context, use targeted reads of touched files only; do not do long repository-wide searches.
         - Focus on concrete deviations from the plan, build/runtime risks, missing acceptance criteria, missing tests, and scope creep.
-        - Return findings with file/line references and severity labels P1, P2, or P3.
+        - Return at most 5 findings with file/line references and severity labels P1, P2, or P3.
         - Return exactly "pass" if no concrete issues remain.
         - P1 blocks correctness, buildability, acceptance, or safe release.
         - P2 is meaningful behavior, architecture, test, or maintainability work that should be fixed before completion.
         - P3 is minor or follow-up.
+        - Do not include command output, raw JSON, transcripts, or a change summary.
         """
     }
 

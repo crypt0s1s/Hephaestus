@@ -23,13 +23,13 @@ public struct AnvilEmptyState: View {
     }
 
     public var body: some View {
-        VStack(spacing: theme.spacing.medium) {
+        VStack(spacing: theme.spacing.cozy) {
             Image(systemName: systemImage)
                 .font(.system(size: 30, weight: .medium))
                 .foregroundStyle(theme.colors.accent)
                 .accessibilityHidden(true)
 
-            VStack(spacing: theme.spacing.xSmall) {
+            VStack(spacing: theme.spacing.squishy) {
                 Text(title)
                     .font(theme.typography.rowTitle)
                     .foregroundStyle(theme.colors.textPrimary)

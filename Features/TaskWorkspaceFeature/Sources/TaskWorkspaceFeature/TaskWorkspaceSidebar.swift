@@ -11,12 +11,12 @@ struct HistorySidebar: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.medium) {
+        VStack(alignment: .leading, spacing: theme.spacing.cozy) {
             header
             persistenceError
             historyContent
         }
-        .padding(theme.spacing.medium)
+        .padding(theme.spacing.cozy)
         .background(theme.colors.sidebarBackground)
     }
 
@@ -57,7 +57,7 @@ struct HistorySidebar: View {
     }
 
     private var loadingState: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.medium) {
+        VStack(alignment: .leading, spacing: theme.spacing.cozy) {
             loadingIndicator("Loading")
             Spacer()
         }
@@ -73,19 +73,19 @@ struct HistorySidebar: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, theme.spacing.large)
+        .padding(.top, theme.spacing.comfortable)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(TaskWorkspaceAccessibilityID.historyEmptyState)
     }
 
     private var sessionList: some View {
         ScrollView {
-            LazyVStack(spacing: theme.spacing.small) {
+            LazyVStack(spacing: theme.spacing.compact) {
                 if isLoading {
                     loadingIndicator("Refreshing")
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, theme.spacing.medium)
-                        .padding(.vertical, theme.spacing.small)
+                        .padding(.horizontal, theme.spacing.cozy)
+                        .padding(.vertical, theme.spacing.compact)
                 }
 
                 ForEach(sessions) { session in
@@ -109,7 +109,7 @@ struct HistorySidebar: View {
     }
 
     private func loadingIndicator(_ text: String) -> some View {
-        HStack(spacing: theme.spacing.small) {
+        HStack(spacing: theme.spacing.compact) {
             ProgressView()
                 .controlSize(.small)
             AnvilStatusPill(text)

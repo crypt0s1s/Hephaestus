@@ -16,7 +16,7 @@ public struct AnvilNumberedRow: View {
     }
 
     public var body: some View {
-        HStack(alignment: .top, spacing: theme.spacing.medium) {
+        HStack(alignment: .top, spacing: theme.spacing.cozy) {
             Text("\(number)")
                 .font(theme.typography.caption.weight(.semibold))
                 .foregroundStyle(theme.colors.textSecondary)
@@ -24,7 +24,7 @@ public struct AnvilNumberedRow: View {
                 .background(theme.colors.selectionBackground)
                 .clipShape(Circle())
 
-            VStack(alignment: .leading, spacing: theme.spacing.xSmall) {
+            VStack(alignment: .leading, spacing: theme.spacing.squishy) {
                 Text(title)
                     .font(theme.typography.body.weight(.medium))
                     .foregroundStyle(theme.colors.textPrimary)
@@ -33,7 +33,7 @@ public struct AnvilNumberedRow: View {
 
             Spacer()
         }
-        .padding(.vertical, theme.spacing.xxSmall)
+        .padding(.vertical, theme.spacing.tiny)
     }
 
     @ViewBuilder

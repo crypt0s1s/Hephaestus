@@ -30,7 +30,7 @@ private struct ProjectSidebar: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.large) {
+        VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
             HStack {
                 Text("Projects")
                     .font(theme.typography.sectionTitle)
@@ -46,8 +46,8 @@ private struct ProjectSidebar: View {
                     model.selectProjectFolder()
                 }
             }
-            .padding(.horizontal, theme.spacing.xLarge)
-            .padding(.top, theme.spacing.xLarge)
+            .padding(.horizontal, theme.spacing.roomy)
+            .padding(.top, theme.spacing.roomy)
 
             if model.state.projects.isEmpty {
                 AnvilEmptyState(
@@ -58,7 +58,7 @@ private struct ProjectSidebar: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: theme.spacing.small) {
+                    LazyVStack(alignment: .leading, spacing: theme.spacing.compact) {
                         ForEach(model.state.projects) { project in
                             ProjectRow(
                                 project: project,
@@ -69,8 +69,8 @@ private struct ProjectSidebar: View {
                             }
                         }
                     }
-                    .padding(.horizontal, theme.spacing.medium)
-                    .padding(.bottom, theme.spacing.xLarge)
+                    .padding(.horizontal, theme.spacing.cozy)
+                    .padding(.bottom, theme.spacing.roomy)
                 }
             }
         }
@@ -119,8 +119,8 @@ private struct WorkflowDetail: View {
     }
 
     private var header: some View {
-        HStack(spacing: theme.spacing.medium) {
-            VStack(alignment: .leading, spacing: theme.spacing.xSmall) {
+        HStack(spacing: theme.spacing.cozy) {
+            VStack(alignment: .leading, spacing: theme.spacing.squishy) {
                 Text(model.state.selectedProject?.name ?? "Workflow Runner")
                     .font(theme.typography.pageTitle)
                     .foregroundStyle(theme.colors.textPrimary)
@@ -140,15 +140,15 @@ private struct WorkflowDetail: View {
             }
             .buttonStyle(.bordered)
         }
-        .padding(.horizontal, theme.spacing.xLarge)
-        .padding(.vertical, theme.spacing.large)
+        .padding(.horizontal, theme.spacing.roomy)
+        .padding(.vertical, theme.spacing.comfortable)
     }
 
     private func selectedProjectContent(_ project: WorkflowProject) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: theme.spacing.large) {
+            VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
                 AnvilSurface {
-                    HStack(spacing: theme.spacing.medium) {
+                    HStack(spacing: theme.spacing.cozy) {
                         AnvilIconTile(systemName: "point.3.connected.trianglepath.dotted")
 
                         AnvilStatusPill(model.state.branchName(for: project) ?? "No git branch detected")
@@ -166,7 +166,7 @@ private struct WorkflowDetail: View {
                 }
 
                 AnvilPanelSection(title: "Workflows") {
-                    VStack(alignment: .leading, spacing: theme.spacing.medium) {
+                    VStack(alignment: .leading, spacing: theme.spacing.cozy) {
                         ForEach(model.state.workflows) { workflow in
                             WorkflowRow(
                                 workflow: workflow,
@@ -218,7 +218,7 @@ private struct WorkflowDetail: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(theme.spacing.xLarge)
+            .padding(theme.spacing.roomy)
         }
     }
 }

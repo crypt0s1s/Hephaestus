@@ -74,7 +74,7 @@ private struct WorkflowRowHeader: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        HStack(alignment: .center, spacing: theme.spacing.medium) {
+        HStack(alignment: .center, spacing: theme.spacing.cozy) {
             WorkflowDisclosureButton(
                 title: workflow.title,
                 isExpanded: isExpanded,
@@ -83,12 +83,12 @@ private struct WorkflowRowHeader: View {
 
             WorkflowKindIcon(kind: workflow.kind)
             WorkflowTitleBlock(title: workflow.title, subtitle: workflow.subtitle)
-            Spacer(minLength: theme.spacing.medium)
+            Spacer(minLength: theme.spacing.cozy)
             WorkflowStateBadge(isActive: isActive, lastRunSucceeded: lastRunSucceeded)
             runButton
         }
-        .padding(.horizontal, theme.spacing.medium)
-        .padding(.vertical, theme.spacing.small)
+        .padding(.horizontal, theme.spacing.cozy)
+        .padding(.vertical, theme.spacing.compact)
     }
 
     private var runButton: some View {
@@ -146,7 +146,7 @@ private struct WorkflowTitleBlock: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.xxSmall) {
+        VStack(alignment: .leading, spacing: theme.spacing.tiny) {
             Text(title)
                 .font(theme.typography.rowTitle)
                 .foregroundStyle(theme.colors.textPrimary)
@@ -193,13 +193,13 @@ private struct WorkflowExpandedContent: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.medium) {
+        VStack(alignment: .leading, spacing: theme.spacing.cozy) {
             configuration
             WorkflowStepList(steps: workflow.steps)
         }
         .padding(.leading, 72)
-        .padding(.trailing, theme.spacing.medium)
-        .padding(.bottom, theme.spacing.medium)
+        .padding(.trailing, theme.spacing.cozy)
+        .padding(.bottom, theme.spacing.cozy)
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
@@ -227,7 +227,7 @@ private struct ExternalWorkflowConfiguration: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.small) {
+        VStack(alignment: .leading, spacing: theme.spacing.compact) {
             Text("Inputs")
                 .font(theme.typography.caption)
                 .foregroundStyle(theme.colors.textSecondary)
@@ -251,7 +251,7 @@ private struct WorkflowStepList: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.xSmall) {
+        VStack(alignment: .leading, spacing: theme.spacing.squishy) {
             ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
                 WorkflowStepRow(step: step, stepNumber: index + 1)
             }
@@ -265,7 +265,7 @@ private struct ImplementationReviewConfiguration: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.small) {
+        VStack(alignment: .leading, spacing: theme.spacing.compact) {
             Text("Configuration")
                 .font(theme.typography.caption)
                 .foregroundStyle(theme.colors.textSecondary)
@@ -305,8 +305,8 @@ private struct WorkflowInputTextFieldStyle: TextFieldStyle {
             .textFieldStyle(.plain)
             .foregroundStyle(theme.colors.textPrimary)
             .font(theme.typography.body)
-            .padding(.horizontal, theme.spacing.medium)
-            .padding(.vertical, theme.spacing.small)
+            .padding(.horizontal, theme.spacing.cozy)
+            .padding(.vertical, theme.spacing.compact)
             .background(theme.colors.elevatedPanelBackground)
             .clipShape(RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous))
             .overlay {
@@ -322,11 +322,11 @@ private struct WorkflowStepRow: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        HStack(alignment: .top, spacing: theme.spacing.small) {
+        HStack(alignment: .top, spacing: theme.spacing.compact) {
             WorkflowStepNumber(number: stepNumber)
             WorkflowTitleBlock(title: step.title, subtitle: step.subtitle)
         }
-        .padding(.vertical, theme.spacing.xxSmall)
+        .padding(.vertical, theme.spacing.tiny)
     }
 }
 

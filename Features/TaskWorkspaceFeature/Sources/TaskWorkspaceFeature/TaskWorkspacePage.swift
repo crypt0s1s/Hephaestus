@@ -74,15 +74,15 @@ public struct TaskWorkspacePage: View {
     }
 
     private var composerPanel: some View {
-        VStack(spacing: theme.spacing.medium) {
+        VStack(spacing: theme.spacing.cozy) {
             if let errorMessage = state.errorMessage {
                 ErrorBanner(message: errorMessage)
             }
 
             composer
         }
-        .padding(.horizontal, theme.spacing.large)
-        .padding(.vertical, theme.spacing.medium)
+        .padding(.horizontal, theme.spacing.comfortable)
+        .padding(.vertical, theme.spacing.cozy)
         .background(theme.colors.panelBackground)
     }
 
@@ -111,8 +111,8 @@ public struct TaskWorkspacePage: View {
     private func transcriptScrollView(proxy: ScrollViewProxy, viewport: GeometryProxy) -> some View {
         ScrollView {
             transcriptMessages(viewport: viewport)
-                .padding(.horizontal, theme.spacing.xLarge)
-                .padding(.vertical, theme.spacing.large)
+                .padding(.horizontal, theme.spacing.roomy)
+                .padding(.vertical, theme.spacing.comfortable)
         }
         .coordinateSpace(name: ConversationScrollTarget.coordinateSpace)
         .accessibilityLabel("Conversation transcript")
@@ -129,10 +129,10 @@ public struct TaskWorkspacePage: View {
     }
 
     private func transcriptMessages(viewport: GeometryProxy) -> some View {
-        LazyVStack(spacing: theme.spacing.large) {
+        LazyVStack(spacing: theme.spacing.comfortable) {
             if state.messages.isEmpty {
                 EmptyTaskState()
-                    .padding(.top, theme.spacing.xxLarge + theme.spacing.xxLarge + theme.spacing.xSmall)
+                    .padding(.top, theme.spacing.spacious + theme.spacing.spacious + theme.spacing.squishy)
             } else {
                 ForEach(state.messages) { message in
                     MessageBubble(message: message)
@@ -168,7 +168,7 @@ public struct TaskWorkspacePage: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .center, spacing: theme.spacing.medium) {
+        HStack(alignment: .center, spacing: theme.spacing.cozy) {
             messageField
             sendButton
         }

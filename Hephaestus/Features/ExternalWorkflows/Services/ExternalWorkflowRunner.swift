@@ -17,7 +17,7 @@ struct ExternalWorkflowRunner {
             return ProcessResult(exitCode: 1, output: "Could not write workflow run input.")
         }
 
-        let recorder = ExternalWorkflowProgressRecorder(debugLogURL: debugLog.fileURL)
+        let recorder = ExternalWorkflowProgressRecorder(debugLogURL: debugLog.directoryURL)
         await recorder.record(
             ExternalWorkflowEvent(
                 type: .workflowStarted,
@@ -234,6 +234,7 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
         }
         Task {
             await debugLog.append(chunk)
+            await debugLog.append(chunk, to: "raw-process.log")
             for line in chunk.split(separator: "\n") {
                 guard let event = decodeEvent(String(line)) else { continue }
                 await recorder.record(event)

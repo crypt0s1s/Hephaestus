@@ -14,7 +14,7 @@ public struct AnvilPanelSection<Content: View>: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.medium) {
+        VStack(alignment: .leading, spacing: theme.spacing.cozy) {
             Text(title)
                 .font(theme.typography.rowTitle)
                 .foregroundStyle(theme.colors.textPrimary)

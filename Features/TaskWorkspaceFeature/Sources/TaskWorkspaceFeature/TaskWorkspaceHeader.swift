@@ -11,7 +11,7 @@ struct TaskHeader: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        HStack(spacing: theme.spacing.medium) {
+        HStack(spacing: theme.spacing.cozy) {
             appIcon
             titleBlock
             Spacer()
@@ -20,8 +20,8 @@ struct TaskHeader: View {
             settingsButton
             statusPill
         }
-        .padding(.horizontal, theme.spacing.large)
-        .padding(.vertical, theme.spacing.medium)
+        .padding(.horizontal, theme.spacing.comfortable)
+        .padding(.vertical, theme.spacing.cozy)
         .background(theme.colors.panelBackground)
     }
 
@@ -30,7 +30,7 @@ struct TaskHeader: View {
     }
 
     private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.xxSmall) {
+        VStack(alignment: .leading, spacing: theme.spacing.tiny) {
             Text("Task Workspace")
                 .font(theme.typography.rowTitle)
                 .foregroundStyle(theme.colors.textPrimary)

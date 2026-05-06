@@ -14,14 +14,14 @@ public struct AnvilStatusPill: View {
     }
 
     public var body: some View {
-        HStack(spacing: theme.spacing.small) {
+        HStack(spacing: theme.spacing.compact) {
             Circle()
                 .fill(color)
                 .frame(width: 8, height: 8)
             AnvilStatusText(text, tone: tone == .neutral ? .neutral : tone)
         }
-        .padding(.horizontal, theme.spacing.medium)
-        .padding(.vertical, theme.spacing.small)
+        .padding(.horizontal, theme.spacing.cozy)
+        .padding(.vertical, theme.spacing.compact)
         .background(theme.colors.border)
         .clipShape(Capsule())
     }

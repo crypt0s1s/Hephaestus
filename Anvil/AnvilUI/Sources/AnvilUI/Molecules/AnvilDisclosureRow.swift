@@ -32,14 +32,14 @@ public struct AnvilDisclosureRow<Accessory: View, Content: View>: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.medium) {
+        VStack(alignment: .leading, spacing: theme.spacing.cozy) {
             rowHeader
             expandedContent
         }
     }
 
     private var rowHeader: some View {
-        HStack(alignment: .center, spacing: theme.spacing.medium) {
+        HStack(alignment: .center, spacing: theme.spacing.cozy) {
             toggleButton
             accessory
         }
@@ -47,11 +47,11 @@ public struct AnvilDisclosureRow<Accessory: View, Content: View>: View {
 
     private var toggleButton: some View {
         Button(action: toggleExpansion) {
-            HStack(alignment: .center, spacing: theme.spacing.medium) {
+            HStack(alignment: .center, spacing: theme.spacing.cozy) {
                 disclosureIcon
                 leadingIcon
                 titleBlock
-                Spacer(minLength: theme.spacing.small)
+                Spacer(minLength: theme.spacing.compact)
             }
             .contentShape(Rectangle())
         }
@@ -82,7 +82,7 @@ public struct AnvilDisclosureRow<Accessory: View, Content: View>: View {
     }
 
     private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.xSmall) {
+        VStack(alignment: .leading, spacing: theme.spacing.squishy) {
             Text(title)
                 .font(theme.typography.rowTitle)
                 .foregroundStyle(theme.colors.textPrimary)

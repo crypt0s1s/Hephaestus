@@ -40,7 +40,7 @@ public struct AnvilSurface<Content: View>: View {
     public var body: some View {
         content
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(theme.spacing.medium)
+            .padding(theme.spacing.cozy)
             .background(background)
             .clipShape(RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous))
             .overlay {

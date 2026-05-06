@@ -37,14 +37,14 @@ public struct AnvilSidebarRow<Trailing: View>: View {
     }
 
     private var rowContent: some View {
-        HStack(spacing: theme.spacing.medium) {
+        HStack(spacing: theme.spacing.cozy) {
             leadingIcon
             titleBlock
-            Spacer(minLength: theme.spacing.small)
+            Spacer(minLength: theme.spacing.compact)
             trailing
         }
-        .padding(.horizontal, theme.spacing.medium)
-        .padding(.vertical, theme.spacing.medium)
+        .padding(.horizontal, theme.spacing.cozy)
+        .padding(.vertical, theme.spacing.cozy)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isSelected ? theme.colors.selectionBackground : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous))
@@ -62,7 +62,7 @@ public struct AnvilSidebarRow<Trailing: View>: View {
     }
 
     private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.xSmall) {
+        VStack(alignment: .leading, spacing: theme.spacing.squishy) {
             Text(title)
                 .font(theme.typography.sectionTitle)
                 .foregroundStyle(theme.colors.textPrimary)

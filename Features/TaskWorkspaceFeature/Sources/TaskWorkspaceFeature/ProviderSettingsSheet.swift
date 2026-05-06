@@ -12,21 +12,21 @@ struct ProviderSettingsSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.large) {
+        VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
             header
             fields
             validationView
             errorBanner
             actions
         }
-        .padding(theme.spacing.xLarge)
+        .padding(theme.spacing.roomy)
         .frame(width: 560)
     }
 
     private var header: some View {
-        HStack(spacing: theme.spacing.medium) {
+        HStack(spacing: theme.spacing.cozy) {
             AnvilIconTile(systemName: "gearshape")
-            VStack(alignment: .leading, spacing: theme.spacing.xSmall) {
+            VStack(alignment: .leading, spacing: theme.spacing.squishy) {
                 Text("Provider Settings")
                     .font(theme.typography.pageTitle)
                     .foregroundStyle(theme.colors.textPrimary)
@@ -141,7 +141,7 @@ struct ProviderSettingsSheet: View {
         case .idle:
             AnvilBanner(message: "Validate before saving live provider settings.", systemImage: "checkmark.shield")
         case .validating:
-            HStack(spacing: theme.spacing.small) {
+            HStack(spacing: theme.spacing.compact) {
                 ProgressView()
                     .controlSize(.small)
                 AnvilStatusPill("Validating provider", tone: .warning)

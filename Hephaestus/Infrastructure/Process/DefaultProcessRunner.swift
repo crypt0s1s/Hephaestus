@@ -50,13 +50,13 @@ struct DefaultProcessRunner: WorkflowProcessRunning {
     }
 }
 
-private final class ProcessRunState: @unchecked Sendable {
+private nonisolated final class ProcessRunState: @unchecked Sendable {
     private let process: Process
     private let pipe: Pipe
     private let continuation: CheckedContinuation<ProcessResult, Never>
     private let lock = NSLock()
-    private var outputData = Data()
-    private var didResume = false
+    nonisolated(unsafe) private var outputData = Data()
+    nonisolated(unsafe) private var didResume = false
 
     init(process: Process, pipe: Pipe, continuation: CheckedContinuation<ProcessResult, Never>) {
         self.process = process
@@ -64,13 +64,13 @@ private final class ProcessRunState: @unchecked Sendable {
         self.continuation = continuation
     }
 
-    func append(_ data: Data) {
+    nonisolated func append(_ data: Data) {
         lock.withLock {
             outputData.append(data)
         }
     }
 
-    func timeout() {
+    nonisolated func timeout() {
         lock.withLock {
             guard !didResume, process.isRunning else { return }
             process.terminate()
@@ -78,7 +78,7 @@ private final class ProcessRunState: @unchecked Sendable {
         finish(exitCode: 124, timedOut: true)
     }
 
-    func finish(exitCode: Int32, timedOut: Bool, errorOutput: String? = nil) {
+    nonisolated func finish(exitCode: Int32, timedOut: Bool, errorOutput: String? = nil) {
         let result: ProcessResult? = lock.withLock {
             guard !didResume else { return nil }
             didResume = true

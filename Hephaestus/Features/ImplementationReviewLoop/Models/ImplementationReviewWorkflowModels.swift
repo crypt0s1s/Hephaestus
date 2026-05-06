@@ -17,17 +17,79 @@ struct ReviewFinding: Equatable {
 
     var hasBlockingIssue: Bool {
         let normalized = transcript.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if normalized == "pass" || normalized.hasPrefix("pass\n") || normalized.hasPrefix("pass ") {
+        if normalized == "pass" {
             return false
         }
         return normalized.split(separator: "\n").contains { line in
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.hasPrefix("p1")
-                || trimmed.hasPrefix("p2")
-                || trimmed.hasPrefix("- p1")
-                || trimmed.hasPrefix("- p2")
-                || trimmed.hasPrefix("* p1")
-                || trimmed.hasPrefix("* p2")
+            ReviewFindingSummary.isBlockingSeverityFindingLine(String(line))
+        }
+    }
+
+    var displaySummary: String {
+        ReviewFindingSummary.extract(from: transcript) ?? "Reviewer output did not include a concise finding summary. Open latest output or full logs for the raw transcript."
+    }
+}
+
+struct ReviewFindingSummary {
+    static func extract(from transcript: String) -> String? {
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let normalized = trimmed.lowercased()
+        if normalized == "pass" {
+            return "pass"
+        }
+
+        let findingLines = trimmed
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { isSeverityFindingLine($0) }
+            .stableUnique()
+
+        guard !findingLines.isEmpty else { return nil }
+        return findingLines.prefix(8).joined(separator: "\n")
+    }
+
+    static func isBlockingSeverityFindingLine(_ line: String) -> Bool {
+        severityLevel(in: line).map { $0 == "p1" || $0 == "p2" } ?? false
+    }
+
+    private static func isSeverityFindingLine(_ line: String) -> Bool {
+        severityLevel(in: line) != nil
+    }
+
+    private static func severityLevel(in line: String) -> String? {
+        var normalized = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        for prefix in ["-", "*"] where normalized.hasPrefix(prefix) {
+            normalized.removeFirst(prefix.count)
+            normalized = normalized.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        if normalized.hasPrefix("[p1]") { return "p1" }
+        if normalized.hasPrefix("[p2]") { return "p2" }
+        if normalized.hasPrefix("[p3]") { return "p3" }
+
+        for severity in ["p1", "p2", "p3"] where normalized.hasPrefix(severity) {
+            var delimiterIndex = normalized.index(normalized.startIndex, offsetBy: severity.count)
+            while delimiterIndex < normalized.endIndex,
+                  normalized[delimiterIndex].isWhitespace {
+                delimiterIndex = normalized.index(after: delimiterIndex)
+            }
+            guard delimiterIndex < normalized.endIndex else { return nil }
+            let delimiter = normalized[delimiterIndex]
+            if delimiter == ":" || delimiter == "-" || delimiter == "[" || delimiter == "]" || delimiter == "." {
+                return severity
+            }
+        }
+        return nil
+    }
+}
+
+private extension Array where Element == String {
+    func stableUnique() -> [String] {
+        var seen = Set<String>()
+        return filter { line in
+            seen.insert(line).inserted
         }
     }
 }

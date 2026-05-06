@@ -10,6 +10,9 @@ struct WorkflowRunOutput: View {
     let debugLogURL: URL?
     @State private var isShowingFullLog = false
     @State private var selectedStepID: WorkflowStepRecord.ID?
+    @State private var displayedRunKey = ""
+    @State private var manuallyExpandedIDs: Set<String> = []
+    @State private var manuallyCollapsedIDs: Set<String> = []
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
@@ -20,7 +23,7 @@ struct WorkflowRunOutput: View {
                 fullLog: fullLog,
                 debugLogURL: debugLogURL,
                 isShowingFullLog: $isShowingFullLog,
-                selectStep: selectStep
+                performRowAction: performRowAction
             )
         } drawer: {
             if let selectedRecord {
@@ -32,10 +35,42 @@ struct WorkflowRunOutput: View {
             }
         }
         .animation(.easeInOut(duration: theme.motion.standard), value: selectedStepID)
+        .animation(.easeInOut(duration: theme.motion.standard), value: manuallyExpandedIDs)
+        .animation(.easeInOut(duration: theme.motion.standard), value: manuallyCollapsedIDs)
+        .onAppear(perform: resetCollapseStateIfNeeded)
+        .onChange(of: runKey) { _, _ in
+            resetCollapseStateIfNeeded()
+        }
     }
 
     private var timelineDisplayRows: [TimelineDisplayRow] {
-        TimelineDisplayRowsBuilder(timeline: timeline, stepRecords: stepRecords).rows
+        if let projection = timelineProjection {
+            let collapsedIDs = WorkflowTimelineProjection.collapsedIDs(
+                defaultExpandedIDs: projection.defaultExpandedIDs,
+                manuallyExpandedIDs: manuallyExpandedIDs,
+                manuallyCollapsedIDs: manuallyCollapsedIDs,
+                in: projection.nodes
+            )
+            return projection.visibleNodes(collapsedIDs: collapsedIDs).map { node in
+                TimelineDisplayRow(
+                    id: node.id,
+                    label: node.label,
+                    detail: node.detail,
+                    status: node.status,
+                    sortOrder: 0,
+                    record: node.record,
+                    depth: node.depth,
+                    isExpandable: node.isExpandable,
+                    isExpanded: node.isExpandable && !collapsedIDs.contains(node.id)
+                )
+            }
+        }
+        return TimelineDisplayRowsBuilder(timeline: timeline, stepRecords: stepRecords).rows
+    }
+
+    private var timelineProjection: WorkflowTimelineProjection? {
+        guard WorkflowTimelineProjection.hasHierarchyMetadata(stepRecords) else { return nil }
+        return WorkflowTimelineProjection.make(records: stepRecords)
     }
 
     private var selectedRecord: WorkflowStepRecord? {
@@ -43,8 +78,40 @@ struct WorkflowRunOutput: View {
         return stepRecords.first { $0.id == selectedStepID }
     }
 
-    private func selectStep(_ row: TimelineDisplayRow) {
+    private var runKey: String {
+        if let debugLogURL {
+            return debugLogURL.path
+        }
+        let recordsKey = stepRecords.map { "\($0.id):\($0.hierarchy?.groupID ?? ""):\($0.hierarchy?.cycleIndex.map(String.init) ?? ""):\($0.hierarchy?.sequenceOrder ?? -1)" }
+            .joined(separator: "|")
+        return "\(recordsKey)#timeline:\(timeline.count)#log:\(fullLog.count)"
+    }
+
+    private func resetCollapseStateIfNeeded() {
+        guard displayedRunKey != runKey else { return }
+        displayedRunKey = runKey
+        manuallyExpandedIDs = []
+        manuallyCollapsedIDs = []
+        selectedStepID = nil
+    }
+
+    private func performRowAction(_ row: TimelineDisplayRow) {
+        if row.isExpandable {
+            toggleExpansion(for: row)
+            return
+        }
         selectedStepID = row.record?.id
+    }
+
+    private func toggleExpansion(for row: TimelineDisplayRow) {
+        guard row.isExpandable else { return }
+        if row.isExpanded {
+            manuallyExpandedIDs.remove(row.id)
+            manuallyCollapsedIDs.insert(row.id)
+        } else {
+            manuallyCollapsedIDs.remove(row.id)
+            manuallyExpandedIDs.insert(row.id)
+        }
     }
 }
 
@@ -58,8 +125,8 @@ private struct WorkflowRunOutputLayout<Content: View, Drawer: View>: View {
             content
             drawer
                 .frame(width: 430)
-                .padding(.vertical, theme.spacing.medium)
-                .padding(.trailing, theme.spacing.medium)
+                .padding(.vertical, theme.spacing.cozy)
+                .padding(.trailing, theme.spacing.cozy)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
         }
     }
@@ -71,15 +138,15 @@ private struct WorkflowRunSummaryColumn: View {
     let fullLog: String
     let debugLogURL: URL?
     @Binding var isShowingFullLog: Bool
-    let selectStep: (TimelineDisplayRow) -> Void
+    let performRowAction: (TimelineDisplayRow) -> Void
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.medium) {
+        VStack(alignment: .leading, spacing: theme.spacing.cozy) {
             RunUpdatesSection(
                 rows: rows,
                 selectedStepID: selectedStepID,
-                selectStep: selectStep
+                performRowAction: performRowAction
             )
 
             if let debugLogURL {
@@ -99,13 +166,13 @@ private struct WorkflowRunSummaryColumn: View {
 private struct RunUpdatesSection: View {
     let rows: [TimelineDisplayRow]
     let selectedStepID: WorkflowStepRecord.ID?
-    let selectStep: (TimelineDisplayRow) -> Void
+    let performRowAction: (TimelineDisplayRow) -> Void
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.small) {
+        VStack(alignment: .leading, spacing: theme.spacing.compact) {
             RunUpdatesHeader()
-            TimelineList(rows: rows, selectedStepID: selectedStepID, selectStep: selectStep)
+            TimelineList(rows: rows, selectedStepID: selectedStepID, performRowAction: performRowAction)
         }
     }
 }
@@ -114,7 +181,7 @@ private struct RunUpdatesHeader: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.xxSmall) {
+        VStack(alignment: .leading, spacing: theme.spacing.tiny) {
             Text("Run updates")
                 .font(theme.typography.rowTitle)
                 .foregroundStyle(theme.colors.textPrimary)
@@ -129,7 +196,7 @@ private struct RunUpdatesHeader: View {
 private struct TimelineList: View {
     let rows: [TimelineDisplayRow]
     let selectedStepID: WorkflowStepRecord.ID?
-    let selectStep: (TimelineDisplayRow) -> Void
+    let performRowAction: (TimelineDisplayRow) -> Void
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
@@ -139,7 +206,7 @@ private struct TimelineList: View {
                     row: row,
                     isLast: row.id == rows.last?.id,
                     isSelected: selectedStepID == row.record?.id,
-                    selectStep: selectStep
+                    performRowAction: performRowAction
                 )
             }
         }
@@ -156,17 +223,17 @@ private struct TimelineListItem: View {
     let row: TimelineDisplayRow
     let isLast: Bool
     let isSelected: Bool
-    let selectStep: (TimelineDisplayRow) -> Void
+    let performRowAction: (TimelineDisplayRow) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             Button {
-                selectStep(row)
+                performRowAction(row)
             } label: {
                 WorkflowTimelineRow(row: row, isSelected: isSelected)
             }
             .buttonStyle(.plain)
-            .disabled(row.record == nil)
+            .disabled(row.record == nil && !row.isExpandable)
 
             TimelineDivider(isVisible: !isLast)
         }
@@ -189,7 +256,7 @@ private struct DebugLogLink: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        HStack(spacing: theme.spacing.medium) {
+        HStack(spacing: theme.spacing.cozy) {
             DebugLogIcon()
             DebugLogPath(debugLogURL: debugLogURL)
             Spacer()
@@ -226,8 +293,8 @@ private struct DebugLogPath: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.xxSmall) {
-            Text("Debug log")
+        VStack(alignment: .leading, spacing: theme.spacing.tiny) {
+            Text("Run logs")
                 .font(theme.typography.body)
                 .foregroundStyle(theme.colors.textPrimary)
             Text(debugLogURL.path)
@@ -248,7 +315,7 @@ private struct FullLogDisclosure: View {
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
             AnvilLogSurface(fullLog, minHeight: 220)
-                .padding(.top, theme.spacing.small)
+                .padding(.top, theme.spacing.compact)
         } label: {
             Label("Show full logs", systemImage: "terminal")
                 .font(theme.typography.body)
@@ -264,14 +331,15 @@ private struct WorkflowTimelineRow: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        HStack(alignment: .center, spacing: theme.spacing.small) {
+        HStack(alignment: .center, spacing: theme.spacing.compact) {
             TimelineStatusIcon(status: row.status)
             TimelineText(row: row)
-            Spacer(minLength: theme.spacing.small)
-            TimelineChevron(isVisible: row.record != nil)
+            Spacer(minLength: theme.spacing.compact)
+            TimelineChevron(isVisible: row.isExpandable || row.record != nil, isExpanded: row.isExpanded)
         }
-        .padding(.horizontal, theme.spacing.medium)
-        .padding(.vertical, theme.spacing.small)
+        .padding(.horizontal, theme.spacing.cozy)
+        .padding(.vertical, theme.spacing.compact)
+        .padding(.leading, CGFloat(row.depth) * 22)
         .background(isSelected ? theme.colors.selectionBackground : Color.clear)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
@@ -283,7 +351,7 @@ private struct TimelineText: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.xxSmall) {
+        VStack(alignment: .leading, spacing: theme.spacing.tiny) {
             Text(row.label)
                 .font(theme.typography.body)
                 .foregroundStyle(theme.colors.textPrimary)
@@ -300,23 +368,25 @@ private struct TimelineText: View {
 
 private struct TimelineChevron: View {
     let isVisible: Bool
+    let isExpanded: Bool
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        Image(systemName: "chevron.right")
+        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(theme.colors.textTertiary)
             .opacity(isVisible ? 1 : 0)
     }
 }
 
-enum TimelineDisplayStatus {
+nonisolated enum TimelineDisplayStatus: Hashable {
     case pending
     case inProgress
     case succeeded
     case failed
+    case needsFix
 
-    init(recordStatus: WorkflowStepRecordStatus) {
+    nonisolated init(recordStatus: WorkflowStepRecordStatus) {
         switch recordStatus {
         case .pending:
             self = .pending
@@ -330,13 +400,16 @@ enum TimelineDisplayStatus {
     }
 }
 
-private struct TimelineDisplayRow: Identifiable {
+nonisolated struct TimelineDisplayRow: Identifiable {
     let id: String
     var label: String
     var detail: String?
     var status: TimelineDisplayStatus
     var sortOrder: Int
     var record: WorkflowStepRecord?
+    var depth: Int = 0
+    var isExpandable: Bool = false
+    var isExpanded: Bool = false
 }
 
 private struct ParsedTimelineEvent {
@@ -346,7 +419,7 @@ private struct ParsedTimelineEvent {
     let sortOrder: Int
 }
 
-private struct TimelineDisplayRowsBuilder {
+struct TimelineDisplayRowsBuilder {
     let timeline: String
     let stepRecords: [WorkflowStepRecord]
 
@@ -496,7 +569,7 @@ private struct WorkflowOutputSurfaceModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .padding(theme.spacing.medium)
+            .padding(theme.spacing.cozy)
             .background(theme.colors.elevatedPanelBackground)
             .clipShape(RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous))
             .overlay {

@@ -1,39 +1,39 @@
 import Foundation
 
 public struct AnvilSpacing: Sendable {
-    public var xxSmall: CGFloat
-    public var xSmall: CGFloat
-    public var small: CGFloat
-    public var medium: CGFloat
-    public var large: CGFloat
-    public var xLarge: CGFloat
-    public var xxLarge: CGFloat
+    public var tiny: CGFloat
+    public var squishy: CGFloat
+    public var compact: CGFloat
+    public var cozy: CGFloat
+    public var comfortable: CGFloat
+    public var roomy: CGFloat
+    public var spacious: CGFloat
 
     public init(
-        xxSmall: CGFloat,
-        xSmall: CGFloat,
-        small: CGFloat,
-        medium: CGFloat,
-        large: CGFloat,
-        xLarge: CGFloat,
-        xxLarge: CGFloat
+        tiny: CGFloat,
+        squishy: CGFloat,
+        compact: CGFloat,
+        cozy: CGFloat,
+        comfortable: CGFloat,
+        roomy: CGFloat,
+        spacious: CGFloat
     ) {
-        self.xxSmall = xxSmall
-        self.xSmall = xSmall
-        self.small = small
-        self.medium = medium
-        self.large = large
-        self.xLarge = xLarge
-        self.xxLarge = xxLarge
+        self.tiny = tiny
+        self.squishy = squishy
+        self.compact = compact
+        self.cozy = cozy
+        self.comfortable = comfortable
+        self.roomy = roomy
+        self.spacious = spacious
     }
 
     public static let fallback = AnvilSpacing(
-        xxSmall: 2,
-        xSmall: 4,
-        small: 8,
-        medium: 12,
-        large: 18,
-        xLarge: 24,
-        xxLarge: 32
+        tiny: 2,
+        squishy: 4,
+        compact: 8,
+        cozy: 12,
+        comfortable: 16,
+        roomy: 24,
+        spacious: 32
     )
 }

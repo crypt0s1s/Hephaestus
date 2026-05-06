@@ -17,13 +17,13 @@ struct RunningStatus: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        HStack(spacing: theme.spacing.small) {
+        HStack(spacing: theme.spacing.compact) {
             ProgressView()
                 .controlSize(.small)
             AnvilStatusText("Foundry is running")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, theme.spacing.small)
+        .padding(.leading, theme.spacing.compact)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(TaskWorkspaceAccessibilityID.runningStatus)
     }
@@ -72,7 +72,7 @@ struct MessageBubble: View {
             fill: isUser ? .selection : .elevated,
             border: isUser ? .accent : .separator
         ) {
-            VStack(alignment: .leading, spacing: theme.spacing.small) {
+            VStack(alignment: .leading, spacing: theme.spacing.compact) {
                 bubbleHeader
                 messageText
             }
@@ -83,7 +83,7 @@ struct MessageBubble: View {
     }
 
     private var bubbleHeader: some View {
-        HStack(spacing: theme.spacing.small) {
+        HStack(spacing: theme.spacing.compact) {
             Image(systemName: isUser ? "person.crop.circle.fill" : "hammer.circle.fill")
                 .foregroundStyle(isUser ? theme.colors.accent : theme.colors.textSecondary)
                 .accessibilityHidden(true)

@@ -25,13 +25,13 @@ private struct WorkflowStepInspectorHeader: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        HStack(alignment: .center, spacing: theme.spacing.small) {
+        HStack(alignment: .center, spacing: theme.spacing.compact) {
             TimelineStatusIcon(status: TimelineDisplayStatus(recordStatus: record.status))
             WorkflowStepInspectorTitle(record: record)
             Spacer()
             WorkflowStepInspectorCloseButton(close: close)
         }
-        .padding(theme.spacing.medium)
+        .padding(theme.spacing.cozy)
     }
 }
 
@@ -40,7 +40,7 @@ private struct WorkflowStepInspectorTitle: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.xxSmall) {
+        VStack(alignment: .leading, spacing: theme.spacing.tiny) {
             Text(record.title)
                 .font(theme.typography.rowTitle)
                 .foregroundStyle(theme.colors.textPrimary)
@@ -101,13 +101,14 @@ private struct WorkflowStepInspectorContent: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: theme.spacing.medium) {
+            VStack(alignment: .leading, spacing: theme.spacing.cozy) {
                 InspectorSection(title: "Summary", text: record.summary)
                 InspectorOptionalSection(title: "Input", text: record.inputPreview)
+                InspectorOptionalSection(title: "Output summary", text: WorkflowStepOutputSummary(record: record).text)
                 InspectorOptionalSection(title: "Latest output", text: record.outputPreview)
                 DebugLogRevealButton(debugLogURL: debugLogURL)
             }
-            .padding(theme.spacing.medium)
+            .padding(theme.spacing.cozy)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
     }
@@ -132,10 +133,107 @@ private struct DebugLogRevealButton: View {
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([debugLogURL])
             } label: {
-                Label("Reveal debug log", systemImage: "arrow.up.forward.app")
+                Label("Reveal full run log", systemImage: "arrow.up.forward.app")
             }
             .buttonStyle(.bordered)
         }
+    }
+}
+
+private struct WorkflowStepOutputSummary {
+    let record: WorkflowStepRecord
+
+    var text: String? {
+        guard let source = record.outputPreview?.trimmingCharacters(in: .whitespacesAndNewlines), !source.isEmpty else {
+            return nil
+        }
+        if isReviewerStep, let reviewSummary = ReviewFindingSummary.extract(from: source) {
+            return reviewSummary
+        }
+        if let finalJSON = Self.finalJSONObject(in: source) {
+            return finalJSON
+        }
+        return Self.compactTailSummary(source)
+    }
+
+    private var isReviewerStep: Bool {
+        record.id.contains("reviewer") || record.title.localizedCaseInsensitiveContains("reviewer")
+    }
+
+    private static func finalJSONObject(in source: String) -> String? {
+        let characters = Array(source)
+        var bestRange: ClosedRange<Int>?
+
+        for index in characters.indices.reversed() where characters[index] == "}" || characters[index] == "]" {
+            if let range = balancedJSONRange(endingAt: index, in: characters),
+               isValidJSON(String(characters[range])) {
+                bestRange = range
+                break
+            }
+        }
+
+        guard let bestRange else { return nil }
+        return prettyPrintedJSON(String(characters[bestRange]))
+    }
+
+    private static func balancedJSONRange(endingAt endIndex: Int, in characters: [Character]) -> ClosedRange<Int>? {
+        let closing = characters[endIndex]
+        let opening: Character = closing == "}" ? "{" : "["
+        var depth = 0
+        var isEscaped = false
+        var isInsideString = false
+
+        for index in stride(from: endIndex, through: 0, by: -1) {
+            let character = characters[index]
+            if isInsideString {
+                if isEscaped {
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == "\"" {
+                    isInsideString = false
+                }
+                continue
+            }
+
+            if character == "\"" {
+                isInsideString = true
+            } else if character == closing {
+                depth += 1
+            } else if character == opening {
+                depth -= 1
+                if depth == 0 {
+                    return index...endIndex
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private static func isValidJSON(_ candidate: String) -> Bool {
+        guard let data = candidate.data(using: .utf8) else { return false }
+        return (try? JSONSerialization.jsonObject(with: data)) != nil
+    }
+
+    private static func prettyPrintedJSON(_ candidate: String) -> String {
+        guard let data = candidate.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let prettyData = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]),
+              let pretty = String(data: prettyData, encoding: .utf8) else {
+            return candidate
+        }
+        return pretty
+    }
+
+    private static func compactTailSummary(_ source: String) -> String {
+        let nonEmptyLines = source
+            .split(separator: "\n")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let tail = nonEmptyLines.suffix(8).joined(separator: "\n")
+        guard !tail.isEmpty else { return source }
+        return tail
     }
 }
 
@@ -145,7 +243,7 @@ private struct InspectorSection: View {
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.xSmall) {
+        VStack(alignment: .leading, spacing: theme.spacing.squishy) {
             Text(title)
                 .font(theme.typography.caption)
                 .foregroundStyle(theme.colors.textSecondary)
@@ -155,7 +253,7 @@ private struct InspectorSection: View {
                 .foregroundStyle(theme.colors.textPrimary)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(theme.spacing.small)
+                .padding(theme.spacing.compact)
                 .background(theme.colors.panelBackground)
                 .clipShape(RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous))
                 .overlay {
@@ -192,6 +290,10 @@ struct TimelineStatusIcon: View {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(theme.colors.danger)
+            case .needsFix:
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.colors.warning)
             case .pending:
                 Image(systemName: "circle.fill")
                     .font(.system(size: 8, weight: .semibold))

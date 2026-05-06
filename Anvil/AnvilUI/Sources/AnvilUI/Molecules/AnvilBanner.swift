@@ -20,7 +20,7 @@ public struct AnvilBanner: View {
     }
 
     public var body: some View {
-        HStack(alignment: .top, spacing: theme.spacing.medium) {
+        HStack(alignment: .top, spacing: theme.spacing.cozy) {
             icon
             Text(message)
                 .font(theme.typography.body)
@@ -28,8 +28,8 @@ public struct AnvilBanner: View {
                 .textSelection(.enabled)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, theme.spacing.medium)
-        .padding(.vertical, theme.spacing.small)
+        .padding(.horizontal, theme.spacing.cozy)
+        .padding(.vertical, theme.spacing.compact)
         .background(color.opacity(tone == .neutral ? 0.08 : 0.10))
         .clipShape(RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous))
         .overlay {

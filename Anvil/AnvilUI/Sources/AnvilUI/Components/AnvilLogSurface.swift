@@ -20,7 +20,7 @@ public struct AnvilLogSurface: View {
                 .foregroundStyle(Color(red: 0.910, green: 0.940, blue: 0.980))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
-                .padding(theme.spacing.medium)
+                .padding(theme.spacing.cozy)
         }
         .frame(minHeight: minHeight)
         .background(theme.colors.logBackground)
