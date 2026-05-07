@@ -43,6 +43,7 @@ nonisolated enum WorkflowStepRecordStatus: String, Equatable {
     case pending
     case inProgress
     case succeeded
+    case needsFix
     case failed
 }
 
@@ -81,6 +82,22 @@ nonisolated struct WorkflowStepRecordHierarchy: Equatable {
     }
 }
 
+nonisolated struct WorkflowStepTiming: Equatable {
+    var startedAt: Date?
+    var finishedAt: Date?
+    var timeoutSeconds: TimeInterval?
+
+    nonisolated init(
+        startedAt: Date? = nil,
+        finishedAt: Date? = nil,
+        timeoutSeconds: TimeInterval? = nil
+    ) {
+        self.startedAt = startedAt
+        self.finishedAt = finishedAt
+        self.timeoutSeconds = timeoutSeconds
+    }
+}
+
 nonisolated struct WorkflowStepRecord: Identifiable, Equatable {
     let id: String
     var title: String
@@ -90,6 +107,7 @@ nonisolated struct WorkflowStepRecord: Identifiable, Equatable {
     var outputPreview: String?
     var sortOrder: Int
     var hierarchy: WorkflowStepRecordHierarchy?
+    var timing: WorkflowStepTiming?
 
     nonisolated init(
         id: String,
@@ -99,7 +117,8 @@ nonisolated struct WorkflowStepRecord: Identifiable, Equatable {
         inputPreview: String? = nil,
         outputPreview: String? = nil,
         sortOrder: Int,
-        hierarchy: WorkflowStepRecordHierarchy? = nil
+        hierarchy: WorkflowStepRecordHierarchy? = nil,
+        timing: WorkflowStepTiming? = nil
     ) {
         self.id = id
         self.title = title
@@ -109,6 +128,7 @@ nonisolated struct WorkflowStepRecord: Identifiable, Equatable {
         self.outputPreview = outputPreview
         self.sortOrder = sortOrder
         self.hierarchy = hierarchy
+        self.timing = timing
     }
 }
 
