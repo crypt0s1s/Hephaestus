@@ -43,8 +43,13 @@ struct WorkflowRow: View {
 
 private struct WorkflowRowSurface<Content: View>: View {
     let isExpanded: Bool
-    @ViewBuilder let content: Content
+    let content: Content
     @Environment(\.anvilTheme) private var theme
+
+    init(isExpanded: Bool, @ViewBuilder content: () -> Content) {
+        self.isExpanded = isExpanded
+        self.content = content()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

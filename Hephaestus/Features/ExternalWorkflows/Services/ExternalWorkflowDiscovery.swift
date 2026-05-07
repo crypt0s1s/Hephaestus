@@ -87,6 +87,15 @@ struct ExternalWorkflowDiscovery {
     }
 
     private func decodeDescription(from output: String) -> WorkflowDescription? {
+        if let start = output.firstIndex(of: "{") {
+            let jsonCandidate = String(output[start...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let data = jsonCandidate.data(using: .utf8),
+               let description = try? JSONDecoder().decode(WorkflowDescription.self, from: data) {
+                return description
+            }
+        }
+
         for line in output.split(separator: "\n").reversed() {
             let trimmed = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed.hasPrefix("{"), let data = trimmed.data(using: .utf8) else { continue }

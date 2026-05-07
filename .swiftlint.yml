@@ -1,0 +1,48 @@
+included:
+  - Anvil
+  - Apps
+  - Core
+  - Features
+  - Hephaestus
+  - HephaestusTests
+  - HephaestusUITests
+  - Tests
+
+excluded:
+  - .build
+  - .swiftpm
+  - Hephaestus.xcodeproj
+  - Hephaestus.xcworkspace
+  - Proofs
+
+cache_path: .swiftlint_cache
+
+line_length:
+  warning: 120
+  error: 180
+  ignores_comments: true
+  ignores_urls: true
+  ignores_function_declarations: true
+
+file_length:
+  warning: 400
+  error: 500
+
+function_body_length:
+  warning: 40
+  error: 60
+
+disabled_rules:
+  - cyclomatic_complexity
+  - for_where
+  - function_parameter_count
+  - identifier_name
+  - large_tuple
+  - nesting
+  - static_over_final_class
+  - trailing_comma
+  - type_name
+  - type_body_length
+
+opt_in_rules:
+  - empty_count

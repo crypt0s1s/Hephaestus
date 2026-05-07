@@ -1,4 +1,5 @@
 .build/
+.swiftlint_cache/
 .swiftpm/
 xcuserdata/
 *.xcuserstate

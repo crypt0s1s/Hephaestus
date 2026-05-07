@@ -1,134 +1,5 @@
 import Foundation
 
-public struct Agent: Sendable, Hashable, Codable {
-    public let id: UUID
-    public let name: String
-    public let profile: AgentProfile
-
-    public init(id: UUID = UUID(), name: String, profile: AgentProfile) {
-        self.id = id
-        self.name = name
-        self.profile = profile
-    }
-}
-
-public struct AgentProfile: Sendable, Hashable, Codable {
-    public let id: UUID
-    public let name: String
-    public let systemPrompt: String
-    public let defaultModel: String
-    public let contextPolicyID: String
-
-    public init(
-        id: UUID = UUID(),
-        name: String,
-        systemPrompt: String,
-        defaultModel: String,
-        contextPolicyID: String
-    ) {
-        self.id = id
-        self.name = name
-        self.systemPrompt = systemPrompt
-        self.defaultModel = defaultModel
-        self.contextPolicyID = contextPolicyID
-    }
-}
-
-public enum RunStatus: Sendable, Hashable, Codable {
-    case idle
-    case running
-    case failed
-    case cancelled
-}
-
-public enum TurnStatus: Sendable, Hashable, Codable {
-    case accepted
-    case preparingContext
-    case awaitingProvider
-    case streaming
-    case succeeded
-    case failed
-    case cancelled
-}
-
-public enum MessageRole: String, Sendable, Hashable, Codable {
-    case system
-    case user
-    case assistant
-    case tool
-}
-
-public enum MessagePart: Sendable, Hashable, Codable {
-    case text(String)
-
-    public var text: String {
-        switch self {
-        case .text(let value):
-            return value
-        }
-    }
-}
-
-public enum MessageSource: Sendable, Hashable, Codable {
-    case localUser
-    case provider
-    case replay
-}
-
-public struct RunMessage: Sendable, Hashable, Identifiable, Codable {
-    public let id: UUID
-    public let role: MessageRole
-    public let parts: [MessagePart]
-    public let createdAt: Date
-    public let source: MessageSource
-    public let turnID: UUID?
-
-    public init(
-        id: UUID = UUID(),
-        role: MessageRole,
-        parts: [MessagePart],
-        createdAt: Date = Date(),
-        source: MessageSource,
-        turnID: UUID?
-    ) {
-        self.id = id
-        self.role = role
-        self.parts = parts
-        self.createdAt = createdAt
-        self.source = source
-        self.turnID = turnID
-    }
-
-    public var text: String {
-        parts.map(\.text).joined()
-    }
-}
-
-public struct Turn: Sendable, Hashable, Identifiable, Codable {
-    public let id: UUID
-    public let runID: UUID
-    public var status: TurnStatus
-    public let userMessageID: UUID
-    public var assistantMessageID: UUID?
-    public var providerRequestID: UUID?
-
-    public init(
-        id: UUID = UUID(),
-        runID: UUID,
-        status: TurnStatus,
-        userMessageID: UUID,
-        assistantMessageID: UUID? = nil,
-        providerRequestID: UUID? = nil
-    ) {
-        self.id = id
-        self.runID = runID
-        self.status = status
-        self.userMessageID = userMessageID
-        self.assistantMessageID = assistantMessageID
-        self.providerRequestID = providerRequestID
-    }
-}
-
 public struct RunSnapshot: Sendable, Hashable {
     public let runID: UUID
     public let agent: Agent
@@ -327,7 +198,7 @@ public actor Run {
     private var messages: [RunMessage] = []
     private var turns: [Turn] = []
     private var activeTurn: Turn?
-    private var sequence = 0
+    var sequence = 0
 
     public init(
         id: UUID = UUID(),
@@ -378,6 +249,49 @@ public actor Run {
             return
         }
 
+        let userMessage = beginTurn(text: text)
+        let turnID = userMessage.turnID ?? UUID()
+        var turn = activeTurn ?? Turn(id: turnID, runID: id, status: .accepted, userMessageID: userMessage.id)
+        continuation.yield(nextEvent(.userMessageAccepted(userMessage), turnID: turnID))
+
+        do {
+            try Task.checkCancellation()
+            updateTurn(&turn) { $0.status = .preparingContext }
+            let context = try await contextManager.makeContext(
+                for: snapshot(),
+                newMessage: userMessage,
+                profile: agent.profile
+            )
+            continuation.yield(nextEvent(.contextPrepared(context.trace), turnID: turnID))
+
+            let request = makeProviderRequest(context: context, turnID: turnID)
+            updateTurn(&turn) {
+                $0.status = .streaming
+                $0.providerRequestID = request.id
+            }
+            continuation.yield(nextEvent(.providerRequestPrepared(request), turnID: turnID))
+
+            let responseText = try await streamProviderResponse(
+                request: request,
+                turnID: turnID,
+                continuation: continuation
+            )
+
+            let assistantMessage = completeTurn(&turn, responseText: responseText, turnID: turnID)
+            continuation.yield(nextEvent(.assistantMessageCompleted(assistantMessage), turnID: turnID))
+            continuation.finish()
+        } catch is CancellationError {
+            finishTurn(&turn, status: .cancelled)
+            continuation.yield(nextEvent(.turnCancelled, turnID: turnID))
+            continuation.finish(throwing: CancellationError())
+        } catch {
+            finishTurn(&turn, status: .failed)
+            continuation.yield(nextEvent(.turnFailed(String(describing: error)), turnID: turnID))
+            continuation.finish(throwing: error)
+        }
+    }
+
+    private func beginTurn(text: String) -> RunMessage {
         status = .running
         let turnID = UUID()
         let userMessage = RunMessage(
@@ -386,119 +300,69 @@ public actor Run {
             source: .localUser,
             turnID: turnID
         )
-        var turn = Turn(id: turnID, runID: id, status: .accepted, userMessageID: userMessage.id)
+        let turn = Turn(id: turnID, runID: id, status: .accepted, userMessageID: userMessage.id)
         activeTurn = turn
         turns.append(turn)
         messages.append(userMessage)
-        continuation.yield(nextEvent(.userMessageAccepted(userMessage), turnID: turnID))
+        return userMessage
+    }
 
-        do {
+    private func makeProviderRequest(context: ContextPackage, turnID: UUID) -> ProviderRequest {
+        ProviderRequest(
+            runID: id,
+            turnID: turnID,
+            model: agent.profile.defaultModel,
+            messages: [ProviderMessage(role: .system, text: context.systemPrompt)] + context.messages.map {
+                ProviderMessage(role: $0.role, text: $0.text)
+            },
+            stream: true
+        )
+    }
+
+    private func streamProviderResponse(
+        request: ProviderRequest,
+        turnID: UUID,
+        continuation: AsyncThrowingStream<RunEvent, Error>.Continuation
+    ) async throws -> String {
+        var responseText = ""
+        for try await chunk in provider.stream(request: request) {
             try Task.checkCancellation()
-            turn.status = .preparingContext
-            activeTurn = turn
-            let context = try await contextManager.makeContext(
-                for: snapshot(),
-                newMessage: userMessage,
-                profile: agent.profile
-            )
-            continuation.yield(nextEvent(.contextPrepared(context.trace), turnID: turnID))
+            if case .text(let value) = chunk.delta {
+                responseText += value
+                continuation.yield(nextEvent(.providerChunkReceived(request.id, value), turnID: turnID))
+            }
+        }
+        return responseText
+    }
 
-            let request = ProviderRequest(
-                runID: id,
-                turnID: turnID,
-                model: agent.profile.defaultModel,
-                messages: ([ProviderMessage(role: .system, text: context.systemPrompt)] + context.messages.map {
-                    ProviderMessage(role: $0.role, text: $0.text)
-                }),
-                stream: true
-            )
+    private func completeTurn(_ turn: inout Turn, responseText: String, turnID: UUID) -> RunMessage {
+        let assistantMessage = RunMessage(
+            role: .assistant,
+            parts: [.text(responseText)],
+            source: .provider,
+            turnID: turnID
+        )
+        messages.append(assistantMessage)
+        turn.assistantMessageID = assistantMessage.id
+        finishTurn(&turn, status: .succeeded)
+        return assistantMessage
+    }
 
-            turn.status = .streaming
-            turn.providerRequestID = request.id
-            activeTurn = turn
-            if let index = turns.firstIndex(where: { $0.id == turn.id }) {
-                turns[index] = turn
-            }
-            continuation.yield(nextEvent(.providerRequestPrepared(request), turnID: turnID))
-
-            var responseText = ""
-            for try await chunk in provider.stream(request: request) {
-                try Task.checkCancellation()
-                if case .text(let value) = chunk.delta {
-                    responseText += value
-                    continuation.yield(nextEvent(.providerChunkReceived(request.id, value), turnID: turnID))
-                }
-            }
-
-            let assistantMessage = RunMessage(
-                role: .assistant,
-                parts: [.text(responseText)],
-                source: .provider,
-                turnID: turnID
-            )
-            messages.append(assistantMessage)
-            turn.status = .succeeded
-            turn.assistantMessageID = assistantMessage.id
-            activeTurn = nil
-            if let index = turns.firstIndex(where: { $0.id == turn.id }) {
-                turns[index] = turn
-            }
-            status = .idle
-            continuation.yield(nextEvent(.assistantMessageCompleted(assistantMessage), turnID: turnID))
-            continuation.finish()
-        } catch is CancellationError {
-            turn.status = .cancelled
-            activeTurn = nil
-            if let index = turns.firstIndex(where: { $0.id == turn.id }) {
-                turns[index] = turn
-            }
-            status = .idle
-            continuation.yield(nextEvent(.turnCancelled, turnID: turnID))
-            continuation.finish(throwing: CancellationError())
-        } catch {
-            turn.status = .failed
-            activeTurn = nil
-            if let index = turns.firstIndex(where: { $0.id == turn.id }) {
-                turns[index] = turn
-            }
-            status = .idle
-            continuation.yield(nextEvent(.turnFailed(String(describing: error)), turnID: turnID))
-            continuation.finish(throwing: error)
+    private func updateTurn(_ turn: inout Turn, update: (inout Turn) -> Void) {
+        update(&turn)
+        activeTurn = turn
+        if let index = turns.firstIndex(where: { $0.id == turn.id }) {
+            turns[index] = turn
         }
     }
 
-    private enum PendingRunEvent {
-        case userMessageAccepted(RunMessage)
-        case contextPrepared(ContextAssemblyTrace)
-        case providerRequestPrepared(ProviderRequest)
-        case providerChunkReceived(UUID, String)
-        case assistantMessageCompleted(RunMessage)
-        case turnCancelled
-        case turnFailed(String)
-    }
-
-    private func nextEvent(_ event: PendingRunEvent, turnID: UUID) -> RunEvent {
-        sequence += 1
-        let header = EventHeader(runID: id, turnID: turnID, sequence: sequence)
-        switch event {
-        case .userMessageAccepted(let message):
-            return .userMessageAccepted(header, message)
-        case .contextPrepared(let trace):
-            return .contextPrepared(header, trace)
-        case .providerRequestPrepared(let request):
-            return .providerRequestPrepared(header, request)
-        case .providerChunkReceived(let requestID, let text):
-            return .providerChunkReceived(header, requestID, text)
-        case .assistantMessageCompleted(let message):
-            return .assistantMessageCompleted(header, message)
-        case .turnCancelled:
-            return .turnCancelled(header)
-        case .turnFailed(let reason):
-            return .turnFailed(header, reason)
+    private func finishTurn(_ turn: inout Turn, status turnStatus: TurnStatus) {
+        turn.status = turnStatus
+        activeTurn = nil
+        if let index = turns.firstIndex(where: { $0.id == turn.id }) {
+            turns[index] = turn
         }
+        status = .idle
     }
-}
 
-public enum RunFailure: Error, Equatable {
-    case alreadyRunning
 }
