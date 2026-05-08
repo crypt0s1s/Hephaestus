@@ -8,8 +8,10 @@ extension WorkflowExecutor {
     You are the implementer agent for a deterministic Hephaestus implementation workflow.
     Project path: \(project.path)
 
-    Source of truth plan:
-    \(plan.contents)
+    The plan is located at:
+    \(plan.relativePath)
+
+    Read the plan from that path before editing.
 
     Rules:
     - Implement only the scope described by the markdown plan.
@@ -26,8 +28,10 @@ extension WorkflowExecutor {
 
     Project path: \(project.path)
 
-    Source of truth plan:
-    \(plan.contents)
+    The plan is located at:
+    \(plan.relativePath)
+
+    Re-read the plan from that path before editing.
 
     Feedback to fix:
     \(feedback)
@@ -44,16 +48,14 @@ extension WorkflowExecutor {
     """
     You are \(name), a review-only agent.
 
-    Review the current implementation against this plan:
+    Review the current implementation against the plan located at:
     \(plan.relativePath)
 
     Project path: \(project.path)
 
-    Plan contents:
-    \(plan.contents)
-
     Rules:
     - Do not edit files.
+    - Read the plan from the path above before reviewing.
     - Review only the current uncommitted implementation diff and directly referenced files.
     - Shell is allowed only for read-only inspection and comparison.
     - Allowed examples: `git diff`, `git status`, `rg`, `sed`, `nl`, or touched-file reads.

@@ -4,7 +4,7 @@
 **Date:** 2026-05-07
 **Owner:** Hephaestus engineering
 **Related ADRs:** TBD
-**Related Plans:** TBD
+**Related Plans:** [Interactive Workflow Step Spike](../plans/0010-interactive-workflow-step-spike.md)
 
 ---
 
@@ -87,6 +87,7 @@ Hephaestus can run a workflow with interactive and automated phases connected by
 - A later interactive user review phase where the user can accept, continue planning, or request another automated cycle.
 - Optional project-local `.hephaestus/` persistence/export for workflow messages and run-local debug outputs in this first slice.
 - Timeline updates that distinguish interactive pause, submitted message, automated review, feedback handoff, planner response, and later interactive review.
+- A first-slice harness adapter boundary with Codex as the only required backend implementation.
 
 ### Out Of Scope
 
@@ -97,6 +98,7 @@ Hephaestus can run a workflow with interactive and automated phases connected by
 - Multi-user collaboration.
 - Durable cross-workflow message or artifact management.
 - A full artifact browser.
+- Implementing Claude, OpenCode, Gemini, or ACP backends in the first slice.
 
 ### Deferred
 
@@ -190,6 +192,14 @@ The planning workflow should exercise at least these message shapes:
 - later interactive user review consumes the latest plan and feedback history.
 
 The PRD does not require a generic typed workflow IO system in this slice, but the technical design should explain how the chosen first-slice representation can evolve toward typed step outputs and inputs.
+
+### Harness Backend Behavior
+
+The first implementation may support only Codex as the backend for interactive planner, reviewer, and planner-response sessions. That Codex support should still sit behind a harness adapter boundary so workflow state does not depend on Codex-specific events or session mechanics.
+
+The workflow runtime should consume normalized backend events and runtime-owned workflow messages. Backend-native details such as launch mode, session IDs, resume commands, raw event payloads, and approval plumbing should be adapter concerns.
+
+Future Claude, OpenCode, Gemini, or ACP support should be additive adapter work, not a rewrite of the planning workflow or message-passing model.
 
 ### Review Feedback Message
 
@@ -337,6 +347,7 @@ If the user continues interactive planning, the workflow resumes or opens an int
 - **FR-11:** The workflow runtime may persist or export first-slice messages under project-local `.hephaestus/` for inspection and debugging.
 - **FR-12:** The workflow timeline must clearly distinguish interactive pause, submitted message, automated cycle, feedback handoff, planner response, and later interactive review states.
 - **FR-13:** The technical design must describe how first-slice message representations can evolve toward encodable step outputs and decodable step inputs.
+- **FR-14:** The first implementation must support Codex through a backend adapter boundary rather than coupling workflow state directly to Codex-specific events.
 
 ## Acceptance Criteria
 
@@ -360,12 +371,15 @@ If the user continues interactive planning, the workflow resumes or opens an int
 - **AC-12.1** (`FR-12`): Given the workflow is waiting for initial planning or later user review, then the timeline shows an explicit interactive waiting state.
 - **AC-12.2** (`FR-12`): Given workflow messages are submitted or produced, then the timeline or inspector exposes their references.
 - **AC-13.1** (`FR-13`): Given the technical plan is written, then it identifies the first-slice message representation and how it can evolve toward encodable outputs and decodable inputs.
+- **AC-14.1** (`FR-14`): Given the first implementation runs planner or reviewer sessions, then workflow code consumes normalized backend events rather than Codex-specific event payloads.
+- **AC-14.2** (`FR-14`): Given a future backend is added, then it can be introduced as a new adapter without changing the planning workflow's message model.
 
 ## Dependencies
 
 - Existing project selection and workflow runner surfaces.
 - Existing headless Codex workflow runner capability.
 - Existing workflow timeline and step inspector surfaces.
+- A first-slice Codex harness adapter for interactive workflow-attached sessions.
 - A design exploration for interactive workflow pause/resume.
 - A project-local `.hephaestus/` persistence/export location.
 - A way to materialize a user-submitted plan from an interactive planner session.
@@ -379,6 +393,7 @@ If the user continues interactive planning, the workflow resumes or opens an int
 - Planner continuity may be harder than expected if interactive sessions and automated planner-response sessions cannot share context cleanly.
 - Multiple automated cycles before user review may feel opaque unless the timeline makes message handoffs visible.
 - `.hephaestus/` could become a broad artifact store before ownership and lifetime are designed.
+- The first Codex integration could leak backend-specific assumptions into workflow state unless the adapter boundary is explicit from the start.
 
 ## Technical Design Gate
 
@@ -404,6 +419,8 @@ PRDs define product need and product constraints. ADRs record durable architectu
 - Multiple automated cycles should run before returning to the next interactive user review step.
 - `.hephaestus/` storage is first-slice runtime persistence/export/debug storage; durable ownership and cross-workflow artifact semantics require a later decision before expansion.
 - The technical plan should preserve a path toward future encodable step outputs and decodable step inputs.
+- The first implementation may be Codex-only, but must use a harness adapter boundary so future backends can be adapter additions.
+- Workflow definitions should depend on normalized backend events and runtime-owned workflow messages, not Codex-specific payloads.
 
 ### Open Technical Questions
 
@@ -413,6 +430,7 @@ PRDs define product need and product constraints. ADRs record durable architectu
 | How should the submit-plan action or command work in the interactive planner phase? | Hephaestus engineering | Yes | Plan | User chooses when to materialize the draft; exact UI/command TBD. |
 | How is planner continuity represented across interactive planning and planner-response phases? | Hephaestus engineering | Yes | Plan/ADR exploration | Options need to be explored. |
 | What first-slice runtime-owned message representation should connect submitted plans, review feedback, and planner responses? | Hephaestus engineering | Yes | Plan | Prefer encoded workflow messages, not file handoffs. |
+| What is the minimal harness adapter contract for Codex-first interactive sessions? | Hephaestus engineering | Yes | Plan/ADR exploration | Codex only in first implementation; future backends should be adapter additions. |
 | What is the exact `.hephaestus/` directory layout for runtime-owned persistence/export outputs? | Hephaestus engineering | Yes | Plan | Consider run-scoped message persistence, message-oriented, or cycle-oriented layouts. |
 | Should persisted/exported review links be project-relative paths, file URLs, or app routes? | Hephaestus engineering | No | Plan | Prefer project-relative links; absolute paths acceptable where needed. |
 
@@ -420,7 +438,7 @@ PRDs define product need and product constraints. ADRs record durable architectu
 
 | Milestone | Outcome | Included FRs | Excluded Scope | Exit Criteria | Dependencies |
 | --- | --- | --- | --- | --- | --- |
-| M1 | Interactive submit gate | FR-1, FR-2, FR-3, FR-4, FR-12 | Reviewer fan-out, multiple cycles | User can start the workflow, work interactively, submit a plan, and see a submitted runtime message | Pause/resume design exploration |
+| M1 | Interactive submit gate | FR-1, FR-2, FR-3, FR-4, FR-12, FR-14 | Reviewer fan-out, multiple cycles | User can start the workflow, work interactively, submit a plan, and see a submitted runtime message | Pause/resume design exploration and Codex adapter boundary |
 | M2 | Message-backed automated cycles | FR-5, FR-6, FR-7, FR-8, FR-11, FR-12 | Final accept/continue controls, generic typed IO | Reviewers consume submitted plan, feedback is consolidated, planner-response consumes feedback, and multiple cycles run | M1 and message representation |
 | M3 | Interactive user review return | FR-9, FR-10, FR-12, FR-13 | Full workflow builder, implementation handoff | Workflow returns to user review with latest plan and feedback trail; user can accept, continue planning, or request another cycle | M2 |
 
@@ -431,6 +449,7 @@ PRDs define product need and product constraints. ADRs record durable architectu
 - Explore pause/resume options for interactive workflow steps.
 - Explore planner continuity options across interactive and automated phases.
 - Choose the first-slice message representation.
+- Define the minimal Codex-first harness adapter boundary.
 - Choose `.hephaestus/` persistence/export layout.
 - Define submit-plan action or command behavior.
 - Confirm default automated cycle count before returning to user review.

@@ -19,6 +19,7 @@ This folder captures the current direction for Hephaestus as an agent system.
 - [Chat Log Runtime Architecture Map](./plans/0005-chat-log-runtime-architecture-map.md): current-state data flow map for chat logs, streaming, persistence, and UI projection.
 - [Chat Session Service Refactor Plan](./plans/0006-chat-session-service-refactor-plan.md): draft refactor sequence for moving long-lived chat IO out of page interactors.
 - [Meta-Harness Foundation Refactor Plan](./plans/0008-meta-harness-foundation-refactor.md): first incremental package/domain/observability slice for moving from chat-first UI toward project/task/workflow-state structure.
+- [Interactive Workflow Step Spike](./plans/0010-interactive-workflow-step-spike.md): spike plan for interactive workflow pause/resume, runtime-owned workflow messages, and planning-review workflow handoffs.
 
 ## Documentation Routing
 

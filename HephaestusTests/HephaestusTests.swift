@@ -191,6 +191,8 @@ struct WorkflowRunnerTests {
     } ?? ""
     let fixPrompt = codexPrompts.first { $0.contains("reported blocking findings") } ?? ""
     #expect(codexPrompts.count == 6)
+    #expect(codexPrompts.allSatisfy { !$0.contains("# Plan") })
+    #expect(codexPrompts.allSatisfy { $0.contains("plan.md") })
     assertReviewerPromptGuards(reviewerPrompt)
     assertFixPromptContainsBlockingFinding(fixPrompt)
   }
@@ -328,6 +330,8 @@ private func assertBuildFailurePrompts(_ runner: RecordingProcessRunner) {
     .filter { $0.arguments.first == "exec" }
     .compactMap { $0.arguments.last }
   #expect(codexPrompts.count == 4)
+  #expect(codexPrompts.allSatisfy { !$0.contains("# Plan") })
+  #expect(codexPrompts.allSatisfy { $0.contains("plan.md") })
   #expect(codexPrompts[1].contains("The build failed"))
   #expect(codexPrompts.contains { $0.contains("Reviewer A") })
   #expect(codexPrompts.contains { $0.contains("Reviewer B") })
