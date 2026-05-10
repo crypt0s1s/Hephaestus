@@ -15,25 +15,31 @@ struct CodexAgentInvocation: Equatable {
 }
 
 struct CodexAgentStep {
-  private let processRunner: WorkflowProcessRunning
+  private let backendAdapter: HarnessBackendAdapter
 
   init(processRunner: WorkflowProcessRunning) {
-    self.processRunner = processRunner
+    self.backendAdapter = CodexHarnessBackendAdapter(processRunner: processRunner)
+  }
+
+  init(backendAdapter: HarnessBackendAdapter) {
+    self.backendAdapter = backendAdapter
   }
 
   func run(_ invocation: CodexAgentInvocation) async -> ProcessResult {
-    let result = await processRunner.run(
-      executable: Self.codexExecutableURL,
-      arguments: [
-        "exec",
-        "--cd", invocation.project.path,
-        "--skip-git-repo-check",
-        "--sandbox", "workspace-write",
-        invocation.prompt,
-      ],
-      currentDirectoryURL: nil,
-      timeoutSeconds: invocation.timeoutSeconds
-    )
+    let result: ProcessResult
+    do {
+      let session = try await backendAdapter.startSession(
+        StartSessionRequest(project: invocation.project, title: invocation.name))
+      let stream = try await backendAdapter.startTurn(
+        StartTurnRequest(
+          session: session,
+          prompt: invocation.prompt,
+          timeoutSeconds: invocation.timeoutSeconds
+        ))
+      result = try await collectTurnResult(from: stream)
+    } catch {
+      result = ProcessResult(exitCode: -1, output: String(describing: error))
+    }
     let timeoutNote =
       result.timedOut
       ? """
@@ -53,12 +59,29 @@ struct CodexAgentStep {
     )
   }
 
-  private static var codexExecutableURL: URL {
-    let appBundledCodex = URL(fileURLWithPath: "/Applications/Codex.app/Contents/Resources/codex")
-    if FileManager.default.isExecutableFile(atPath: appBundledCodex.path) {
-      return appBundledCodex
+  private func collectTurnResult(
+    from stream: AsyncThrowingStream<BackendEvent, Error>
+  ) async throws -> ProcessResult {
+    var output = ""
+    for try await event in stream {
+      switch event {
+      case .outputChunk(let chunk):
+        output += chunk
+      case .turnCompleted(let result), .turnFailed(let result):
+        return result
+      case .sessionStarted,
+           .turnStarted,
+           .approvalRequested,
+           .turnCancelled:
+        continue
+      }
     }
-    return URL(fileURLWithPath: "/usr/bin/env")
+    return ProcessResult(
+      exitCode: -1,
+      output: output.isEmpty
+        ? "Codex turn ended without a completion event."
+        : output
+    )
   }
 }
 

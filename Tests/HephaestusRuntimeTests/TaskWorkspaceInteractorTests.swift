@@ -27,7 +27,7 @@ struct TaskWorkspaceInteractorTests {
 
     await streamUserMessage.waitUntilRequestCount(1)
     #expect(interactor.state.isRunning)
-    #expect(interactor.state.draftText == "")
+    #expect(interactor.state.draftText.isEmpty)
 
     let completedMessageID = await yieldProgressiveDraft(
       runID: runID,

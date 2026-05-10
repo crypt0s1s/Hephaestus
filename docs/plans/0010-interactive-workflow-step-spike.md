@@ -217,8 +217,6 @@ The spike should define the smallest useful host-side contract, roughly:
 
 ```swift
 protocol HarnessBackendAdapter {
-  var capabilities: HarnessBackendCapabilities { get }
-
   func startSession(_ request: StartSessionRequest) async throws -> BackendSession
   func resumeSession(_ request: ResumeSessionRequest) async throws -> BackendSession
   func startTurn(_ request: StartTurnRequest) async throws -> AsyncThrowingStream<BackendEvent, Error>
@@ -241,6 +239,21 @@ For the first Codex adapter:
 - Persist backend session metadata separately from user-visible transcript and workflow messages.
 - Preserve raw Codex events for debugging, but route the app from normalized events.
 - Make app-owned approval handling part of the adapter contract instead of letting an embedded CLI own the product decision.
+
+### 3.2.1 Implementation Status
+
+Started in the first implementation slice:
+
+- Added `HarnessBackendAdapter` and first-slice backend request/event/session types under `Hephaestus/Features/HarnessBackends`.
+- Added `CodexHarnessBackendAdapter` as the only concrete backend.
+- Refactored `CodexAgentStep` to run through the adapter boundary while preserving current `codex exec` workflow behavior.
+
+Still pending:
+
+- Workflow-attached interactive chat UI.
+- Codex app-server integration for long-lived interactive sessions.
+- Runtime-owned `WorkflowMessage` persistence and submit-plan flow.
+- App-owned approval handling beyond the adapter contract.
 
 ## 4. Current Code Areas To Inspect
 

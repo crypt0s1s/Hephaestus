@@ -32,13 +32,21 @@ function_body_length:
   warning: 40
   error: 60
 
+nesting:
+  type_level:
+    warning: 2
+    error: 2
+  function_level:
+    warning: 4
+    error: 4
+  check_nesting_in_closures_and_statements: true
+
 disabled_rules:
   - cyclomatic_complexity
   - for_where
   - function_parameter_count
   - identifier_name
   - large_tuple
-  - nesting
   - static_over_final_class
   - trailing_comma
   - type_name
@@ -46,3 +54,12 @@ disabled_rules:
 
 opt_in_rules:
   - empty_count
+  - empty_string
+  - empty_xctest_method
+  - fatal_error_message
+  - final_test_case
+  - first_where
+  - private_swiftui_state
+  - redundant_nil_coalescing
+  - sorted_first_last
+  - yoda_condition

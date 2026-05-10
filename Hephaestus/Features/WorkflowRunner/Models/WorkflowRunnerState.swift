@@ -4,8 +4,11 @@ struct WorkflowRunnerState: Equatable {
     var projects: [WorkflowProject] = []
     var selectedProjectID: WorkflowProject.ID?
     var branchNames: [WorkflowProject.ID: String] = [:]
-    var workflows: [WorkflowDefinition] = [.helloWorld, .implementationReviewLoop]
-    var expandedWorkflowIDs: Set<WorkflowDefinition.ID> = [WorkflowDefinition.implementationReviewLoop.id]
+    var workflows: [WorkflowDefinition] = []
+    var expandedWorkflowIDs: Set<WorkflowDefinition.ID> = [
+        ImplementationReviewBuiltInWorkflow.id,
+        PlanningReviewWorkflowRunner.id,
+    ]
     var implementationPlanPath = ""
     var implementationBuildCommand = "swift build"
     var externalWorkflowInputValues: [WorkflowDefinition.ID: [String: String]] = [:]
@@ -18,6 +21,7 @@ struct WorkflowRunnerState: Equatable {
     var debugLogURL: URL?
     var lastRunSucceeded: Bool?
     var lastRunWorkflowID: WorkflowDefinition.ID?
+    var planningInteraction: WorkflowInteractionState?
 
     var selectedProject: WorkflowProject? {
         guard let selectedProjectID else { return nil }

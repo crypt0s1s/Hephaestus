@@ -246,6 +246,9 @@ private struct TimelineListItem: View {
       }
       .buttonStyle(.plain)
       .disabled(row.record == nil && !row.isExpandable)
+      .accessibilityLabel(row.label)
+      .accessibilityValue(row.detail ?? "")
+      .accessibilityIdentifier("workflow.timeline.row.\(row.id)")
 
       TimelineDivider(isVisible: !isLast)
     }

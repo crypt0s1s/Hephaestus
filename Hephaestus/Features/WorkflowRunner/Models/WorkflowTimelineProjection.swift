@@ -350,8 +350,7 @@ nonisolated struct WorkflowTimelineProjection: Equatable {
     records
       .filter { $0.hierarchy?.parentID == parentID }
       .map(recordSortKey)
-      .sorted { sortKey($0, isLessThan: $1) }
-      .first ?? [Int.max]
+      .min { sortKey($0, isLessThan: $1) } ?? [Int.max]
   }
 
   private nonisolated static func sortKey(_ lhs: [Int], isLessThan rhs: [Int]) -> Bool {

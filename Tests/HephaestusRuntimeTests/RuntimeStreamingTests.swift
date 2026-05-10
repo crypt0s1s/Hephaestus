@@ -208,7 +208,7 @@ struct RuntimeStreamingTests {
     await createRun.waitUntilCallCount(1)
 
     #expect(interactor.state.isRunning)
-    #expect(interactor.state.draftText == "")
+    #expect(interactor.state.draftText.isEmpty)
     #expect(interactor.state.errorMessage == nil)
 
     await createRun.releaseAll()

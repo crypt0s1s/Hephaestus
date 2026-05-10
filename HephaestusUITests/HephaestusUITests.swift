@@ -10,7 +10,7 @@ final class HephaestusUITests: XCTestCase {
     let app = XCUIApplication()
     app.launchEnvironment["HEPHAESTUS_PROVIDER"] = "mock"
     app.launch()
-    openWindowIfNeeded(in: app)
+    selectTasksMode(in: app)
 
     XCTAssertTrue(app.staticTexts["Task Workspace"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.scrollViews["conversation.transcript"].exists)
@@ -24,7 +24,7 @@ final class HephaestusUITests: XCTestCase {
     let app = XCUIApplication()
     app.launchEnvironment["HEPHAESTUS_PROVIDER"] = "mock"
     app.launch()
-    openWindowIfNeeded(in: app)
+    selectTasksMode(in: app)
 
     let input = messageInput(in: app)
     XCTAssertTrue(app.staticTexts["Task Workspace"].waitForExistence(timeout: 5))
@@ -61,14 +61,18 @@ final class HephaestusUITests: XCTestCase {
     app.launchEnvironment["HEPHAESTUS_WORKFLOW_PROJECT_PATH"] = repoURL.path
     app.launchEnvironment["HEPHAESTUS_EXTERNAL_WORKFLOW_ROOT"] = externalWorkflowURL.path
     app.launch()
-    openWorkflowWindowIfNeeded(in: app)
+    selectWorkflowsMode(in: app)
 
     let workflowsTab = app.buttons["Workflows"]
     if workflowsTab.waitForExistence(timeout: 5) {
       workflowsTab.click()
     }
 
-    let runButton = app.buttons["workflow.run.external-implementation-review-example"]
+    let runButton = workflowRunButton(
+      in: app,
+      id: "external-implementation-review-example",
+      title: "External Implementation Review Example"
+    )
     XCTAssertTrue(runButton.waitForExistence(timeout: 90))
     XCTAssertTrue(waitForEnabled(runButton, timeout: 10))
     runButton.click()
@@ -81,6 +85,88 @@ final class HephaestusUITests: XCTestCase {
     XCTAssertTrue(
       app.staticTexts["External Implementation Review Example completed for Hephaestus."]
         .waitForExistence(timeout: 30))
+  }
+
+  @MainActor
+  func testPlanningReviewWorkflowStartsInteractiveWaitingState() throws {
+    let app = XCUIApplication()
+    let repoURL = try repositoryRootURL()
+
+    app.launchEnvironment["HEPHAESTUS_PROVIDER"] = "mock"
+    app.launchEnvironment["HEPHAESTUS_WORKFLOW_PROJECT_PATH"] = repoURL.path
+    app.launch()
+    selectWorkflowsMode(in: app)
+
+    let workflowsTab = app.buttons["Workflows"]
+    if workflowsTab.waitForExistence(timeout: 5) {
+      workflowsTab.click()
+    }
+
+    XCTAssertTrue(app.staticTexts["Planning Review Workflow"].waitForExistence(timeout: 10))
+    let runButton = workflowRunButton(
+      in: app,
+      id: "planning-review",
+      title: "Planning Review Workflow"
+    )
+    XCTAssertTrue(runButton.waitForExistence(timeout: 10))
+    XCTAssertTrue(waitForEnabled(runButton, timeout: 10))
+    clickWorkflowRunButton(runButton)
+
+    XCTAssertTrue(app.staticTexts["Interactive planning"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["workflow.timeline.row.planning-review-interactive-planning"]
+        .waitForExistence(timeout: 10))
+    scrollToPlanningInteraction(in: app)
+    XCTAssertTrue(app.descendants(matching: .any)["planning.interaction"].waitForExistence(timeout: 10))
+    XCTAssertTrue(planningMessageInput(in: app).waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["planning.draftPlan"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["planning.submitPlan"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["Submit plan message"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["Automated review cycles"].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
+  func testPlanningReviewWorkflowSubmitsInteractivePlan() throws {
+    let app = XCUIApplication()
+    let repoURL = try repositoryRootURL()
+
+    app.launchEnvironment["HEPHAESTUS_PROVIDER"] = "mock"
+    app.launchEnvironment["HEPHAESTUS_WORKFLOW_PROJECT_PATH"] = repoURL.path
+    app.launch()
+    selectWorkflowsMode(in: app)
+
+    let runButton = workflowRunButton(
+      in: app,
+      id: "planning-review",
+      title: "Planning Review Workflow"
+    )
+    XCTAssertTrue(runButton.waitForExistence(timeout: 10))
+    XCTAssertTrue(waitForEnabled(runButton, timeout: 10))
+    clickWorkflowRunButton(runButton)
+
+    XCTAssertTrue(app.staticTexts["Interactive planning"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["workflow.timeline.row.planning-review-interactive-planning"]
+        .waitForExistence(timeout: 10))
+    scrollToPlanningInteraction(in: app)
+    let messageInput = planningMessageInput(in: app)
+    XCTAssertTrue(messageInput.waitForExistence(timeout: 10))
+    messageInput.click()
+    messageInput.typeText("Build the interactive planning phase")
+    app.buttons["planning.sendButton"].click()
+
+    let draftPlan = planningDraftPlan(in: app)
+    XCTAssertTrue(draftPlan.waitForExistence(timeout: 10))
+    draftPlan.click()
+    draftPlan.typeText("# Plan\n\nBuild the interactive planning phase.")
+
+    let submitButton = app.buttons["planning.submitPlan"]
+    XCTAssertTrue(waitForEnabled(submitButton, timeout: 10))
+    submitButton.click()
+
+    XCTAssertTrue(
+      app.staticTexts["Submitted plan is ready for automated review cycles."]
+        .waitForExistence(timeout: 10))
   }
 
   @MainActor
@@ -102,24 +188,76 @@ final class HephaestusUITests: XCTestCase {
     return app.textViews["conversation.messageInput"]
   }
 
-  private func openWindowIfNeeded(in app: XCUIApplication) {
-    if app.staticTexts["Task Workspace"].waitForExistence(timeout: 2) {
-      return
+  private func planningMessageInput(in app: XCUIApplication) -> XCUIElement {
+    let textField = app.textFields["planning.messageInput"]
+    if textField.exists {
+      return textField
     }
-    app.typeKey("n", modifierFlags: .command)
+    let anyElement = app.descendants(matching: .any)["planning.messageInput"]
+    if anyElement.exists {
+      return anyElement
+    }
+    return app.textViews["planning.messageInput"]
   }
 
-  private func openWorkflowWindowIfNeeded(in app: XCUIApplication) {
-    if app.staticTexts["Workflows"].waitForExistence(timeout: 2) {
+  private func planningDraftPlan(in app: XCUIApplication) -> XCUIElement {
+    let textView = app.textViews["planning.draftPlan"]
+    if textView.exists {
+      return textView
+    }
+    return app.descendants(matching: .any)["planning.draftPlan"]
+  }
+
+  private func scrollToPlanningInteraction(in app: XCUIApplication) {
+    let interaction = app.descendants(matching: .any)["planning.interaction"]
+    let workflowScroll = app.scrollViews["workflow.contentScroll"]
+    for _ in 0..<5 where !interaction.exists {
+      if workflowScroll.exists {
+        workflowScroll.swipeUp()
+      } else {
+        app.scrollViews.firstMatch.swipeUp()
+      }
+    }
+  }
+
+  private func selectTasksMode(in app: XCUIApplication) {
+    let tasksButton = app.buttons["Tasks"]
+    if tasksButton.waitForExistence(timeout: 5) {
+      tasksButton.click()
       return
     }
-    app.typeKey("n", modifierFlags: .command)
+    XCTAssertTrue(app.staticTexts["Task Workspace"].waitForExistence(timeout: 5))
+  }
+
+  private func selectWorkflowsMode(in app: XCUIApplication) {
+    let workflowsButton = app.buttons["Workflows"]
+    if workflowsButton.waitForExistence(timeout: 5) {
+      workflowsButton.click()
+      return
+    }
+    XCTAssertTrue(app.staticTexts["Workflows"].waitForExistence(timeout: 5))
   }
 
   private func waitForEnabled(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
     let predicate = NSPredicate(format: "enabled == true")
     let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
     return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+  }
+
+  private func workflowRunButton(in app: XCUIApplication, id: String, title: String) -> XCUIElement {
+    let identifierButton = app.buttons["workflow.run.\(id)"]
+    if identifierButton.waitForExistence(timeout: 2) {
+      return identifierButton
+    }
+    let identifierElement = app.descendants(matching: .any)["workflow.run.\(id)"]
+    if identifierElement.waitForExistence(timeout: 2) {
+      return identifierElement
+    }
+    return app.buttons["Run \(title)"]
+  }
+
+  private func clickWorkflowRunButton(_ button: XCUIElement) {
+    button.click()
   }
 
   private func repositoryRootURL() throws -> URL {

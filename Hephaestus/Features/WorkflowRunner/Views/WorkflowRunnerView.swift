@@ -152,10 +152,13 @@ private struct WorkflowDetail: View {
       VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
         projectBranchSurface(project)
         workflowsSection
+        planningInteraction
+        workflowRunOutput
       }
       .frame(maxWidth: .infinity, alignment: .topLeading)
       .padding(theme.spacing.roomy)
     }
+    .accessibilityIdentifier("workflow.contentScroll")
   }
 
   private func projectBranchSurface(_ project: WorkflowProject) -> some View {
@@ -180,7 +183,6 @@ private struct WorkflowDetail: View {
       VStack(alignment: .leading, spacing: theme.spacing.cozy) {
         workflowRows
         workflowStatusBanner
-        workflowRunOutput
       }
     }
   }
@@ -218,6 +220,16 @@ private struct WorkflowDetail: View {
       AnvilBanner(
         message: statusMessage,
         tone: model.state.lastRunSucceeded == false ? .danger : .neutral
+      )
+    }
+  }
+
+  @ViewBuilder
+  private var planningInteraction: some View {
+    if let planningInteraction = model.state.planningInteraction {
+      PlanningInteractionView(
+        state: planningInteraction,
+        action: PlanningInteractionActionProcessor(model: model).handle
       )
     }
   }

@@ -37,7 +37,6 @@ struct WorkflowRow: View {
                 )
             }
         }
-        .accessibilityIdentifier("workflow.row.\(workflow.id)")
     }
 }
 
@@ -86,7 +85,7 @@ private struct WorkflowRowHeader: View {
                 action: toggleExpansion
             )
 
-            WorkflowKindIcon(kind: workflow.kind)
+            WorkflowKindIcon(systemImage: workflow.systemImage)
             WorkflowTitleBlock(title: workflow.title, subtitle: workflow.subtitle)
             Spacer(minLength: theme.spacing.cozy)
             WorkflowStateBadge(isActive: isActive, lastRunSucceeded: lastRunSucceeded)
@@ -103,6 +102,7 @@ private struct WorkflowRowHeader: View {
         .buttonStyle(.borderedProminent)
         .tint(theme.colors.accent)
         .disabled(isRunning)
+        .accessibilityLabel("Run \(workflow.title)")
         .accessibilityIdentifier("workflow.run.\(workflow.id)")
     }
 }
@@ -128,7 +128,7 @@ private struct WorkflowDisclosureButton: View {
 }
 
 private struct WorkflowKindIcon: View {
-    let kind: WorkflowKind
+    let systemImage: String
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
@@ -138,10 +138,6 @@ private struct WorkflowKindIcon: View {
             .frame(width: 34, height: 34)
             .background(theme.colors.selectionBackground)
             .clipShape(RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous))
-    }
-
-    private var systemImage: String {
-        kind == .implementationReviewLoop ? "point.3.connected.trianglepath.dotted" : "doc.text"
     }
 }
 
@@ -210,13 +206,16 @@ private struct WorkflowExpandedContent: View {
 
     @ViewBuilder
     private var configuration: some View {
-        if workflow.kind == .implementationReviewLoop {
+        switch workflow.configuration {
+        case .none:
+            EmptyView()
+        case .implementationReview:
             ImplementationReviewConfiguration(
                 planPath: $planPath,
                 buildCommand: $buildCommand
             )
-        } else if workflow.kind == .externalSwiftPackage, !workflow.inputs.isEmpty {
-            ExternalWorkflowConfiguration(
+        case .inputs:
+            WorkflowInputsConfiguration(
                 inputs: workflow.inputs,
                 values: externalInputValues,
                 updateInput: updateExternalInput
@@ -225,7 +224,7 @@ private struct WorkflowExpandedContent: View {
     }
 }
 
-private struct ExternalWorkflowConfiguration: View {
+private struct WorkflowInputsConfiguration: View {
     let inputs: [WorkflowInputDefinition]
     let values: [String: String]
     let updateInput: (String, String) -> Void

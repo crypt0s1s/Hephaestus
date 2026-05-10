@@ -9,7 +9,7 @@ final class WorkflowRunnerModel: ObservableObject {
   private let projectStore: ProjectStore
   private let projectPicker: ProjectPicker
   private let branchReader: GitBranchReader
-  private let workflowRunner: HeadlessCodexWorkflowRunner
+  private let builtInWorkflowCatalog: BuiltInWorkflowCatalog
   private let externalWorkflowDiscovery: ExternalWorkflowDiscovery
   private let externalWorkflowRunner: ExternalWorkflowRunner
   private let environment: [String: String]
@@ -19,7 +19,7 @@ final class WorkflowRunnerModel: ObservableObject {
       projectStore: UserDefaultsProjectStore(),
       projectPicker: NSOpenPanelProjectPicker(),
       branchReader: GitBranchReader(),
-      workflowRunner: HeadlessCodexWorkflowRunner(),
+      builtInWorkflowCatalog: .production(),
       externalWorkflowDiscovery: ExternalWorkflowDiscovery(),
       externalWorkflowRunner: ExternalWorkflowRunner(),
       environment: ProcessInfo.processInfo.environment
@@ -30,7 +30,7 @@ final class WorkflowRunnerModel: ObservableObject {
     projectStore: ProjectStore,
     projectPicker: ProjectPicker,
     branchReader: GitBranchReader,
-    workflowRunner: HeadlessCodexWorkflowRunner,
+    builtInWorkflowCatalog: BuiltInWorkflowCatalog,
     externalWorkflowDiscovery: ExternalWorkflowDiscovery,
     externalWorkflowRunner: ExternalWorkflowRunner,
     environment: [String: String]
@@ -38,7 +38,7 @@ final class WorkflowRunnerModel: ObservableObject {
     self.projectStore = projectStore
     self.projectPicker = projectPicker
     self.branchReader = branchReader
-    self.workflowRunner = workflowRunner
+    self.builtInWorkflowCatalog = builtInWorkflowCatalog
     self.externalWorkflowDiscovery = externalWorkflowDiscovery
     self.externalWorkflowRunner = externalWorkflowRunner
     self.environment = environment
@@ -48,6 +48,7 @@ final class WorkflowRunnerModel: ObservableObject {
       projects: snapshot.projects,
       selectedProjectID: snapshot.selectedProjectID
     )
+    initialState.workflows = builtInWorkflowCatalog.definitions
     if let environmentProject = Self.environmentProject(environment: environment) {
       initialState.projects.removeAll { $0.id == environmentProject.id }
       initialState.projects.insert(environmentProject, at: 0)
@@ -121,94 +122,41 @@ final class WorkflowRunnerModel: ObservableObject {
   }
 
   func runWorkflow(_ workflow: WorkflowDefinition) {
-    switch workflow.kind {
-    case .helloWorld:
-      runHelloWorldWorkflow()
-    case .implementationReviewLoop:
-      runImplementationReviewLoop()
+    switch workflow.source {
+    case .builtIn:
+      runBuiltInWorkflow(workflow)
     case .externalSwiftPackage:
       runExternalWorkflow(workflow)
     }
   }
 
-  private func runHelloWorldWorkflow() {
-    guard let project = state.selectedProject else { return }
+  private func runBuiltInWorkflow(_ workflow: WorkflowDefinition) {
+    guard let project = state.selectedProject,
+          let builtInWorkflow = builtInWorkflowCatalog.workflow(id: workflow.id)
+    else { return }
 
     update {
       $0.isRunning = true
-      $0.activeWorkflowID = WorkflowDefinition.helloWorld.id
-      $0.statusMessage = "Running HelloWorld workflow..."
-      $0.timelineOutput =
-        "Step 1 - Create HelloWorld.txt started.\nStep 2 - Delete HelloWorld.txt will run after creation."
-      $0.stepRecords = []
-      $0.output = ""
-      $0.debugLogURL = nil
-      $0.lastRunSucceeded = nil
-    }
-
-    Task {
-      let result = await workflowRunner.runHelloWorldWorkflow(in: project)
-      update {
-        $0.output = result.output
-        $0.debugLogURL = result.debugLogURL
-        $0.stepRecords = result.stepRecords
-        $0.timelineOutput =
-          result.exitCode == 0
-          ? "Step 1 - Create HelloWorld.txt finished.\nStep 2 - Delete HelloWorld.txt finished.\nWorkflow completed."
-          : "HelloWorld workflow failed. Open full logs for details."
-        $0.isRunning = false
-        $0.activeWorkflowID = nil
-        $0.lastRunWorkflowID = WorkflowDefinition.helloWorld.id
-        $0.lastRunSucceeded = result.exitCode == 0
-        $0.statusMessage =
-          result.exitCode == 0
-          ? "Created and deleted HelloWorld.txt in \(project.name)."
-          : "Workflow failed with exit code \(result.exitCode)."
-      }
-    }
-  }
-
-  private func runImplementationReviewLoop() {
-    guard let project = state.selectedProject else { return }
-
-    let request = ImplementationReviewWorkflowRequest(
-      planRelativePath: state.implementationPlanPath,
-      buildCommand: state.implementationBuildCommand
-    )
-
-    update {
-      $0.isRunning = true
-      $0.activeWorkflowID = WorkflowDefinition.implementationReviewLoop.id
+      $0.activeWorkflowID = workflow.id
       $0.statusMessage = nil
-      $0.timelineOutput = "Step 0 - Preparing implementation review loop..."
+      $0.timelineOutput = "\(workflow.title) started."
       $0.stepRecords = []
       $0.output = ""
       $0.debugLogURL = nil
       $0.lastRunSucceeded = nil
+      $0.planningInteraction = nil
     }
 
     Task {
-      let result = await workflowRunner.runImplementationReviewLoop(
-        in: project,
-        request: request,
-        progress: { [weak model = self] progress in
-          await model?.applyWorkflowProgress(progress)
-        }
-      )
-      update {
-        $0.output = result.output
-        $0.debugLogURL = result.debugLogURL
-        $0.stepRecords = result.stepRecords
-        $0.timelineOutput = result.timeline.isEmpty ? result.output : result.timeline
-        $0.isRunning = false
-        $0.activeWorkflowID = nil
-        $0.lastRunWorkflowID = WorkflowDefinition.implementationReviewLoop.id
-        $0.lastRunSucceeded = result.exitCode == 0
-        $0.statusMessage =
-          result.exitCode == 0
-          ? "Implementation Review Loop completed for \(project.name)."
-          : "Implementation Review Loop failed with exit code \(result.exitCode)."
-      }
+      let result = await builtInWorkflow.run(
+        context: BuiltInWorkflowRunContext(
+          project: project,
+          inputValues: builtInInputValues(),
+          progress: { [weak model = self] progress in
+            await model?.applyWorkflowProgress(progress)
+          }
+        ))
+      applyBuiltInWorkflowResult(result, workflow: workflow, project: project)
     }
   }
 
@@ -224,6 +172,7 @@ final class WorkflowRunnerModel: ObservableObject {
       $0.output = ""
       $0.debugLogURL = nil
       $0.lastRunSucceeded = nil
+      $0.planningInteraction = nil
     }
 
     Task {
@@ -256,7 +205,7 @@ final class WorkflowRunnerModel: ObservableObject {
     let externalWorkflows = await externalWorkflowDiscovery.discoverWorkflows()
     guard !externalWorkflows.isEmpty else { return }
     update {
-      $0.workflows.removeAll { $0.kind == .externalSwiftPackage }
+      $0.workflows.removeAll { $0.source == .externalSwiftPackage }
       $0.workflows.append(contentsOf: externalWorkflows)
       $0.expandedWorkflowIDs.formUnion(externalWorkflows.map(\.id))
       for workflow in externalWorkflows {
@@ -266,6 +215,55 @@ final class WorkflowRunnerModel: ObservableObject {
           uniquingKeysWith: { _, current in current }
         )
       }
+    }
+  }
+
+  private func applyBuiltInWorkflowResult(
+    _ result: BuiltInWorkflowRunResult,
+    workflow: WorkflowDefinition,
+    project: WorkflowProject
+  ) {
+    switch result {
+    case .completed(let processResult):
+      applyCompletedBuiltInWorkflowResult(processResult, workflow: workflow, project: project)
+    case .waiting(let progress, let output):
+      update {
+        $0.output = output
+        $0.debugLogURL = progress.debugLogURL
+        $0.stepRecords = progress.stepRecords
+        $0.timelineOutput = progress.timeline
+        $0.isRunning = true
+        $0.activeWorkflowID = workflow.id
+        $0.lastRunWorkflowID = nil
+        $0.lastRunSucceeded = nil
+        $0.statusMessage = nil
+        if workflow.id == PlanningReviewWorkflowRunner.id {
+          $0.planningInteraction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
+        } else {
+          $0.planningInteraction = nil
+        }
+      }
+    }
+  }
+
+  private func applyCompletedBuiltInWorkflowResult(
+    _ result: ProcessResult,
+    workflow: WorkflowDefinition,
+    project: WorkflowProject
+  ) {
+    update {
+      $0.output = result.output
+      $0.debugLogURL = result.debugLogURL
+      $0.stepRecords = result.stepRecords
+      $0.timelineOutput = result.timeline.isEmpty ? result.output : result.timeline
+      $0.isRunning = false
+      $0.activeWorkflowID = nil
+      $0.lastRunWorkflowID = workflow.id
+      $0.lastRunSucceeded = result.exitCode == 0
+      $0.statusMessage =
+        result.exitCode == 0
+        ? "\(workflow.title) completed for \(project.name)."
+        : "\(workflow.title) failed with exit code \(result.exitCode)."
     }
   }
 
@@ -290,7 +288,7 @@ final class WorkflowRunnerModel: ObservableObject {
     }
   }
 
-  private func update(_ mutate: (inout WorkflowRunnerState) -> Void) {
+  func update(_ mutate: (inout WorkflowRunnerState) -> Void) {
     mutate(&state)
   }
 
@@ -307,4 +305,12 @@ final class WorkflowRunnerModel: ObservableObject {
         ($0.id, $0.defaultValue ?? "")
       })
   }
+
+  private func builtInInputValues() -> [String: String] {
+    [
+      ImplementationReviewBuiltInWorkflow.planPathInputID: state.implementationPlanPath,
+      ImplementationReviewBuiltInWorkflow.buildCommandInputID: state.implementationBuildCommand,
+    ]
+  }
+
 }

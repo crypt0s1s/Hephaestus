@@ -227,7 +227,7 @@ struct WorkflowRunnerTests {
 
     #expect(workflows.count == 1)
     #expect(workflows.first?.id == "external-implementation-review-example")
-    #expect(workflows.first?.kind == .externalSwiftPackage)
+    #expect(workflows.first?.source == .externalSwiftPackage)
     #expect(workflows.first?.externalPackagePath == packageURL.path)
     #expect(workflows.first?.externalEntryName == "ImplementationReviewWorkflow")
     #expect(workflows.first?.inputs.map(\.id) == ["planPath"])
