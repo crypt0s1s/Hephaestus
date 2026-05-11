@@ -210,7 +210,7 @@ public struct RunInspectorPanelState: Equatable {
     public var inspection: RunInspectionSnapshot? {
         switch loadState {
         case .loading(let placeholder):
-            return placeholder ?? nil
+            return placeholder.flatMap { $0 }
         case .loaded(let inspection):
             return inspection
         case .error:

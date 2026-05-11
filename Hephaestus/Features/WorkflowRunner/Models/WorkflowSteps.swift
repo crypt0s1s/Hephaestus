@@ -5,12 +5,20 @@ struct CodexAgentInvocation: Equatable {
   let project: WorkflowProject
   let prompt: String
   let timeoutSeconds: TimeInterval?
+  let sandboxMode: String
 
-  init(name: String, project: WorkflowProject, prompt: String, timeoutSeconds: TimeInterval? = 300) {
+  init(
+    name: String,
+    project: WorkflowProject,
+    prompt: String,
+    timeoutSeconds: TimeInterval? = 300,
+    sandboxMode: String = "workspace-write"
+  ) {
     self.name = name
     self.project = project
     self.prompt = prompt
     self.timeoutSeconds = timeoutSeconds
+    self.sandboxMode = sandboxMode
   }
 }
 
@@ -34,7 +42,8 @@ struct CodexAgentStep {
         StartTurnRequest(
           session: session,
           prompt: invocation.prompt,
-          timeoutSeconds: invocation.timeoutSeconds
+          timeoutSeconds: invocation.timeoutSeconds,
+          sandboxMode: invocation.sandboxMode
         ))
       result = try await collectTurnResult(from: stream)
     } catch {

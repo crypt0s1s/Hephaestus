@@ -45,13 +45,14 @@ struct CodexHarnessBackendAdapter: HarnessBackendAdapter {
   }
 
   private func runCodexExecTurn(_ request: StartTurnRequest) async -> ProcessResult {
-    await processRunner.run(
-      executable: Self.codexExecutableURL,
-      arguments: [
+    let command = Self.codexCommand
+    return await processRunner.run(
+      executable: command.executable,
+      arguments: command.argumentsPrefix + [
         "exec",
         "--cd", request.session.project.path,
         "--skip-git-repo-check",
-        "--sandbox", "workspace-write",
+        "--sandbox", request.sandboxMode,
         request.prompt,
       ],
       currentDirectoryURL: nil,
@@ -59,11 +60,11 @@ struct CodexHarnessBackendAdapter: HarnessBackendAdapter {
     )
   }
 
-  private static var codexExecutableURL: URL {
+  private static var codexCommand: (executable: URL, argumentsPrefix: [String]) {
     let appBundledCodex = URL(fileURLWithPath: "/Applications/Codex.app/Contents/Resources/codex")
     if FileManager.default.isExecutableFile(atPath: appBundledCodex.path) {
-      return appBundledCodex
+      return (appBundledCodex, [])
     }
-    return URL(fileURLWithPath: "/usr/bin/env")
+    return (URL(fileURLWithPath: "/usr/bin/env"), ["codex"])
   }
 }

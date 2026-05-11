@@ -157,15 +157,20 @@ final class HephaestusUITests: XCTestCase {
 
     let draftPlan = planningDraftPlan(in: app)
     XCTAssertTrue(draftPlan.waitForExistence(timeout: 10))
-    draftPlan.click()
-    draftPlan.typeText("# Plan\n\nBuild the interactive planning phase.")
 
     let submitButton = app.buttons["planning.submitPlan"]
-    XCTAssertTrue(waitForEnabled(submitButton, timeout: 10))
+    XCTAssertTrue(waitForEnabled(submitButton, timeout: 20))
     submitButton.click()
 
+    XCTAssertTrue(app.buttons["planning.acceptPlan"].waitForExistence(timeout: 60))
+    XCTAssertTrue(app.buttons["planning.anotherCycle"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["planning.continuePlanning"].waitForExistence(timeout: 10))
     XCTAssertTrue(
-      app.staticTexts["Submitted plan is ready for automated review cycles."]
+      app.staticTexts["Interactive user review"]
+        .waitForExistence(timeout: 10))
+    app.buttons["planning.acceptPlan"].click()
+    XCTAssertTrue(
+      app.staticTexts["Planning review workflow accepted."]
         .waitForExistence(timeout: 10))
   }
 

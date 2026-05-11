@@ -20,11 +20,18 @@ struct StartTurnRequest: Equatable {
   let session: BackendSession
   let prompt: String
   let timeoutSeconds: TimeInterval?
+  let sandboxMode: String
 
-  init(session: BackendSession, prompt: String, timeoutSeconds: TimeInterval? = nil) {
+  init(
+    session: BackendSession,
+    prompt: String,
+    timeoutSeconds: TimeInterval? = nil,
+    sandboxMode: String = "workspace-write"
+  ) {
     self.session = session
     self.prompt = prompt
     self.timeoutSeconds = timeoutSeconds
+    self.sandboxMode = sandboxMode
   }
 }
 

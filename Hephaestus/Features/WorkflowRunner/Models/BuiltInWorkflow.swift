@@ -31,11 +31,13 @@ struct BuiltInWorkflowCatalog {
   static func production(processRunner: WorkflowProcessRunning = DefaultProcessRunner())
     -> BuiltInWorkflowCatalog {
     let headlessRunner = HeadlessCodexWorkflowRunner(processRunner: processRunner)
+    let planningReviewAutomation = PlanningReviewPrototypeAutomation(
+      agentStep: CodexAgentStep(processRunner: processRunner))
     return BuiltInWorkflowCatalog(
       workflows: [
         HelloWorldBuiltInWorkflow(runner: headlessRunner),
         ImplementationReviewBuiltInWorkflow(runner: headlessRunner),
-        PlanningReviewWorkflowRunner(),
+        PlanningReviewWorkflowRunner(automation: planningReviewAutomation),
       ]
     )
   }

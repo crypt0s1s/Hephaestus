@@ -22,6 +22,7 @@ This folder captures the current direction for Hephaestus as an agent system.
 - [Meta-Harness Foundation Refactor Plan](./plans/0008-meta-harness-foundation-refactor.md): first incremental package/domain/observability slice for moving from chat-first UI toward project/task/workflow-state structure.
 - [Interactive Workflow Step Spike](./plans/0010-interactive-workflow-step-spike.md): spike plan for interactive workflow pause/resume, runtime-owned workflow messages, and planning-review workflow handoffs.
 - [Interactive Planning Review Manual UI Checklist](./plans/0011-interactive-planning-review-manual-ui-checklist.md): manual acceptance checklist for PRD-0011 interactive planning workflow UI flows.
+- [Interactive Workflow Model Refinement](./plans/0012-interactive-workflow-model-refinement.md): sub-agent review summary and implementation direction for Codex-backed interactive planning, artifact materialization, and review cycles.
 
 ## Documentation Routing
 

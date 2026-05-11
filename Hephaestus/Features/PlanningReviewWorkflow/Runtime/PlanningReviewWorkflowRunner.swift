@@ -2,6 +2,11 @@ import Foundation
 
 struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
   static let id = "planning-review"
+  let automation: any PlanningReviewAutomating
+
+  init(automation: any PlanningReviewAutomating) {
+    self.automation = automation
+  }
 
   let definition = WorkflowDefinition(
     id: id,
@@ -32,7 +37,7 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
       id: "automated-review-cycles",
       title: "Automated review cycles",
       subtitle: "Runs multiple reviewer and planner-response cycles.",
-      pendingSummary: "Reviewer cycles will start after the submitted plan message exists.",
+      pendingSummary: "Reviewer cycles will start after the submitted plan artifact exists.",
       sortOrder: 30
     ),
     PlanningReviewStep(
@@ -85,16 +90,61 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
     )
   }
 
-  func submitPlan(project: WorkflowProject, message: InteractiveStepMessage) -> WorkflowRunProgress {
+  func submitPlan(project: WorkflowProject, output: InteractiveStepOutput) -> WorkflowRunProgress {
     WorkflowRunProgress(
       timeline: """
         Planning Review Workflow started.
-        Interactive planning phase submitted a plan message.
+        Interactive planning phase submitted a plan artifact.
         Automated reviewer cycles are ready to start.
         """,
       debugLogURL: nil,
-      stepRecords: submittedPlanRecords(project: project, message: message)
+      stepRecords: submittedPlanRecords(project: project, output: output)
     )
+  }
+
+  func runAutomatedReviewCycles(
+    project: WorkflowProject,
+    submittedOutput: InteractiveStepOutput,
+    progress: WorkflowProgressHandler? = nil
+  ) async -> ProcessResult {
+    let planPath = submittedOutput.artifact.projectRelativePath ?? "the submitted plan artifact"
+    var run = PlanningReviewPrototypeAutomationRun(
+      timeline: automation.startedTimeline,
+      records: submittedPlanRecords(project: project, output: submittedOutput),
+      planPath: planPath
+    )
+    for cycle in 1...automation.reviewCycleCount {
+      await automation.runCycle(
+        cycle: cycle,
+        project: project,
+        submittedOutput: submittedOutput,
+        run: &run,
+        progress: progress
+      )
+    }
+    return finishPlanningReviewPrototypeAutomationRun(run)
+  }
+
+  func runPlanningReviewPrototypeAutomationCycle(
+    cycle: Int,
+    project: WorkflowProject,
+    submittedOutput: InteractiveStepOutput,
+    run: inout PlanningReviewPrototypeAutomationRun,
+    progress: WorkflowProgressHandler?
+  ) async {
+    await automation.runCycle(
+      cycle: cycle,
+      project: project,
+      submittedOutput: submittedOutput,
+      run: &run,
+      progress: progress
+    )
+  }
+
+  func finishPlanningReviewPrototypeAutomationRun(
+    _ run: PlanningReviewPrototypeAutomationRun
+  ) -> ProcessResult {
+    automation.finish(run)
   }
 
   private func initialPlanningRecords(project: WorkflowProject) -> [WorkflowStepRecord] {
@@ -105,14 +155,14 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
     }
   }
 
-  private func submittedPlanRecords(project: WorkflowProject, message: InteractiveStepMessage)
+  private func submittedPlanRecords(project: WorkflowProject, output: InteractiveStepOutput)
     -> [WorkflowStepRecord] {
     Self.steps.map { step in
       switch step.id {
       case "interactive-planning":
-        return submittedInteractivePlanningRecord(step: step, project: project, message: message)
+        return submittedInteractivePlanningRecord(step: step, project: project, output: output)
       case "submit-plan":
-        return submittedPlanRecord(step: step, message: message)
+        return submittedPlanRecord(step: step, output: output)
       case "automated-review-cycles":
         return reviewCyclesReadyRecord(step: step)
       default:
@@ -124,31 +174,31 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
   private func submittedInteractivePlanningRecord(
     step: PlanningReviewStep,
     project: WorkflowProject,
-    message: InteractiveStepMessage
+    output: InteractiveStepOutput
   ) -> WorkflowStepRecord {
     WorkflowStepRecord(
       id: step.recordID,
       title: step.title,
       status: .succeeded,
-      summary: "Planner interaction produced a submitted plan message.",
+      summary: "Planner interaction produced a submitted plan artifact.",
       inputPreview: """
         Project: \(project.name)
         Goal: Draft a reviewable implementation plan.
         """,
-      outputPreview: message.summary ?? "Submitted plan message \(message.id)",
+      outputPreview: output.summary ?? "Submitted plan artifact \(output.id)",
       sortOrder: step.sortOrder
     )
   }
 
-  private func submittedPlanRecord(step: PlanningReviewStep, message: InteractiveStepMessage)
+  private func submittedPlanRecord(step: PlanningReviewStep, output: InteractiveStepOutput)
     -> WorkflowStepRecord {
     WorkflowStepRecord(
       id: step.recordID,
       title: step.title,
       status: .succeeded,
-      summary: message.summary ?? "Submitted plan message \(message.id)",
+      summary: output.summary ?? "Submitted plan artifact \(output.id)",
       inputPreview: "Producer: interactive planning step",
-      outputPreview: submittedPlanPreview(from: message),
+      outputPreview: submittedPlanPreview(from: output),
       sortOrder: step.sortOrder
     )
   }
@@ -163,11 +213,8 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
     )
   }
 
-  private func submittedPlanPreview(from message: InteractiveStepMessage) -> String {
-    switch message.payload {
-    case .artifact(let artifact):
-      return artifact.content
-    }
+  private func submittedPlanPreview(from output: InteractiveStepOutput) -> String {
+    output.artifact.content
   }
 
   private func interactivePlanningRecord(

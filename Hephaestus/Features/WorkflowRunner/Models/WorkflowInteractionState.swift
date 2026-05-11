@@ -1,17 +1,35 @@
 import Foundation
 
 struct WorkflowInteractionState: Equatable {
+  enum Phase: Equatable {
+    case idle
+    case sending
+    case materializing
+    case reviewing
+    case completed
+    case accepted
+  }
+
+  enum DraftProvenance: Equatable {
+    case empty
+    case agentGenerated
+    case userEdited
+  }
+
   var workflowID: WorkflowDefinition.ID
   var stepID: String
   var sessionID: String
+  var backendSession: BackendSession?
   var title: String
   var subtitle: String
   var inputPlaceholder: String
   var draftTitle: String
+  var phase: Phase = .idle
+  var draftProvenance: DraftProvenance = .empty
   var draft = ""
   var note = ""
   var entries: [WorkflowInteractionEntry]
-  var submittedMessage: InteractiveStepMessage?
+  var submittedOutput: InteractiveStepOutput?
   var errorMessage: String?
 
   init(
@@ -43,11 +61,28 @@ struct WorkflowInteractionState: Equatable {
   }
 
   var canAddNote: Bool {
-    !trimmedNote.isEmpty && submittedMessage == nil
+    !trimmedNote.isEmpty && submittedOutput == nil && phase == .idle
   }
 
   var canSubmit: Bool {
-    !trimmedDraft.isEmpty && submittedMessage == nil
+    !trimmedDraft.isEmpty && submittedOutput == nil && phase == .idle && draftProvenance == .userEdited
+  }
+
+  var canResolveCompletedOutput: Bool {
+    submittedOutput != nil && phase == .completed
+  }
+
+  var draftRequiresUserEdit: Bool {
+    !trimmedDraft.isEmpty && submittedOutput == nil && phase == .idle && draftProvenance == .agentGenerated
+  }
+
+  var isBusy: Bool {
+    switch phase {
+    case .sending, .materializing, .reviewing:
+      return true
+    case .idle, .completed, .accepted:
+      return false
+    }
   }
 }
 
@@ -55,6 +90,7 @@ struct WorkflowInteractionEntry: Identifiable, Equatable {
   enum Source: Equatable {
     case system
     case user
+    case assistant
   }
 
   let id: String

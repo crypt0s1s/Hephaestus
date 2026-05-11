@@ -12,6 +12,7 @@ final class WorkflowRunnerModel: ObservableObject {
   private let builtInWorkflowCatalog: BuiltInWorkflowCatalog
   private let externalWorkflowDiscovery: ExternalWorkflowDiscovery
   private let externalWorkflowRunner: ExternalWorkflowRunner
+  let planningReviewServices: PlanningReviewServices
   private let environment: [String: String]
 
   convenience init() {
@@ -22,6 +23,10 @@ final class WorkflowRunnerModel: ObservableObject {
       builtInWorkflowCatalog: .production(),
       externalWorkflowDiscovery: ExternalWorkflowDiscovery(),
       externalWorkflowRunner: ExternalWorkflowRunner(),
+      planningReviewServices: Self.planningReviewServices(
+        environment: ProcessInfo.processInfo.environment,
+        processRunner: DefaultProcessRunner()
+      ),
       environment: ProcessInfo.processInfo.environment
     )
   }
@@ -33,6 +38,7 @@ final class WorkflowRunnerModel: ObservableObject {
     builtInWorkflowCatalog: BuiltInWorkflowCatalog,
     externalWorkflowDiscovery: ExternalWorkflowDiscovery,
     externalWorkflowRunner: ExternalWorkflowRunner,
+    planningReviewServices: PlanningReviewServices,
     environment: [String: String]
   ) {
     self.projectStore = projectStore
@@ -41,6 +47,7 @@ final class WorkflowRunnerModel: ObservableObject {
     self.builtInWorkflowCatalog = builtInWorkflowCatalog
     self.externalWorkflowDiscovery = externalWorkflowDiscovery
     self.externalWorkflowRunner = externalWorkflowRunner
+    self.planningReviewServices = planningReviewServices
     self.environment = environment
 
     let snapshot = projectStore.load()
@@ -297,6 +304,17 @@ final class WorkflowRunnerModel: ObservableObject {
       return nil
     }
     return WorkflowProject(url: URL(fileURLWithPath: path, isDirectory: true), bookmarkData: nil)
+  }
+
+  private static func planningReviewServices(
+    environment: [String: String],
+    processRunner: WorkflowProcessRunning
+  ) -> PlanningReviewServices {
+    PlanningReviewServices(
+      backendAdapter: environment["HEPHAESTUS_PROVIDER"] == "mock"
+        ? MockHarnessBackendAdapter()
+        : CodexHarnessBackendAdapter(processRunner: processRunner)
+    )
   }
 
   private static func defaultInputValues(for workflow: WorkflowDefinition) -> [String: String] {

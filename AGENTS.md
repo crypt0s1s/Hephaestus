@@ -15,6 +15,18 @@ In short:
 - When a refactor would produce the better long-term shape, propose it in the implementation plan. Refactors should be total within the affected concept or boundary, not partial patches that leave competing old and new patterns in place.
 - Implement only after the PRD and any required design/ADR gates are resolved, then validate against the PRD acceptance criteria.
 
+## Prototype And Mocking Frame
+
+It is acceptable to mock behavior while building early workflow slices, but mocks must be shaped so they can be replaced by the real building blocks later.
+
+- Keep mocks behind explicit interfaces, adapters, or test/support implementations. Do not mix mock behavior into production core files.
+- Name temporary hardcoded implementations honestly, such as `PlanningReviewPrototype...` or `...Fixture`, when they are not meant to become the general architecture.
+- Preserve separation of concerns even in prototypes: UI state, runtime orchestration, backend calls, artifact storage, validation, and workflow definitions should have distinct owners.
+- Avoid letting a happy-path spike define generic models by accident. If a model is planning-specific, keep it in the planning feature; if it is meant to be reusable, keep planning-specific prompts, paths, and validation out of it.
+- Prefer replaceable seams over broad abstractions. A small concrete protocol or service boundary is enough when it lets the mocked piece be swapped for the real implementation later.
+- Before adding hardcoded prompts, file paths, agent names, or validation rules, place them in a feature-specific component and make the temporary nature clear in the type or file name.
+- Review prototype code for migration pressure: the next implementation should replace one component, not untangle behavior spread across the model, view, runner, and backend adapter.
+
 Use existing repository templates and indexes:
 
 - [PRD Template](docs/prd/template.md)

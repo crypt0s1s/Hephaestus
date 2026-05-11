@@ -54,14 +54,16 @@ struct WorkflowRunnerTests {
 
     let calls = runner.recordedCalls()
     #expect(calls.count == 2)
+    let expectedCodexArguments = [
+      "exec",
+      "--cd", "/tmp/project",
+      "--skip-git-repo-check",
+      "--sandbox", "workspace-write",
+      "implement",
+    ]
     #expect(
-      calls[0].arguments == [
-        "exec",
-        "--cd", "/tmp/project",
-        "--skip-git-repo-check",
-        "--sandbox", "workspace-write",
-        "implement",
-      ])
+      calls[0].arguments == expectedCodexArguments
+        || calls[0].arguments == ["codex"] + expectedCodexArguments)
     #expect(calls[0].timeoutSeconds == 300)
     #expect(calls[1].executable.path == "/bin/zsh")
     #expect(calls[1].arguments == ["-lc", "swift build"])
