@@ -18,7 +18,7 @@ let package = Package(
         .package(path: "../../Core/HephaestusKernel"),
         .package(path: "../../Core/HephaestusObservation"),
         .package(path: "../../Core/HephaestusRuntime"),
-        .package(path: "../TaskWorkspaceContracts")
+        .package(path: "../TaskWorkspaceContracts"),
     ],
     targets: [
         .target(
@@ -31,7 +31,7 @@ let package = Package(
                 .product(name: "HephaestusKernel", package: "HephaestusKernel"),
                 .product(name: "HephaestusObservation", package: "HephaestusObservation"),
                 .product(name: "HephaestusRuntime", package: "HephaestusRuntime"),
-                .product(name: "TaskWorkspaceContracts", package: "TaskWorkspaceContracts")
+                .product(name: "TaskWorkspaceContracts", package: "TaskWorkspaceContracts"),
             ]
         )
     ]

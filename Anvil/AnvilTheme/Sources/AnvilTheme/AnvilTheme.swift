@@ -35,15 +35,15 @@ private struct AnvilThemeKey: EnvironmentKey {
     static let defaultValue = AnvilTheme.fallback
 }
 
-public extension EnvironmentValues {
-    var anvilTheme: AnvilTheme {
+extension EnvironmentValues {
+    public var anvilTheme: AnvilTheme {
         get { self[AnvilThemeKey.self] }
         set { self[AnvilThemeKey.self] = newValue }
     }
 }
 
-public extension View {
-    func anvilTheme(_ theme: AnvilTheme) -> some View {
+extension View {
+    public func anvilTheme(_ theme: AnvilTheme) -> some View {
         environment(\.anvilTheme, theme)
     }
 }

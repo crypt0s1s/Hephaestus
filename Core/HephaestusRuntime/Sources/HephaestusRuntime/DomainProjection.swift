@@ -3,8 +3,8 @@ import HephaestusDomain
 import HephaestusKernel
 import HephaestusObservation
 
-public extension AgentTask {
-    init(
+extension AgentTask {
+    public init(
         sessionSummary: PersistedSessionSummary,
         projectID: ProjectID = DefaultProject.id,
         status: TaskStatus = .completed
@@ -20,7 +20,7 @@ public extension AgentTask {
         )
     }
 
-    init(
+    public init(
         session: PersistedSession,
         projectID: ProjectID = DefaultProject.id
     ) {
@@ -36,8 +36,8 @@ public extension AgentTask {
     }
 }
 
-public extension TaskStatus {
-    init(session: PersistedSession) {
+extension TaskStatus {
+    public init(session: PersistedSession) {
         guard let status = session.turns.last?.status else {
             self = session.messages.isEmpty ? .draft : .completed
             return
@@ -56,8 +56,8 @@ public extension TaskStatus {
     }
 }
 
-public extension RunInspectionSnapshot {
-    init(inspection: PersistedRunInspection, taskID: TaskID? = nil) {
+extension RunInspectionSnapshot {
+    public init(inspection: PersistedRunInspection, taskID: TaskID? = nil) {
         let session = inspection.session
         let resolvedTaskID = taskID ?? TaskID(rawValue: session.id)
         self.init(
@@ -74,8 +74,8 @@ public extension RunInspectionSnapshot {
     }
 }
 
-public extension ObservationEvent {
-    init(event: PersistedRuntimeEvent, taskID: TaskID? = nil) {
+extension ObservationEvent {
+    public init(event: PersistedRuntimeEvent, taskID: TaskID? = nil) {
         self.init(
             id: event.id,
             runID: event.runID,
@@ -90,8 +90,8 @@ public extension ObservationEvent {
     }
 }
 
-public extension ObservationEventKind {
-    init(_ kind: PersistedRuntimeEvent.Kind) {
+extension ObservationEventKind {
+    public init(_ kind: PersistedRuntimeEvent.Kind) {
         switch kind {
         case .runCreated:
             self = .runCreated
@@ -113,8 +113,8 @@ public extension ObservationEventKind {
     }
 }
 
-public extension ObservedTurn {
-    init(turn: Turn) {
+extension ObservedTurn {
+    public init(turn: Turn) {
         self.init(
             id: turn.id,
             runID: turn.runID,
@@ -126,8 +126,8 @@ public extension ObservedTurn {
     }
 }
 
-public extension ObservedTurnStatus {
-    init(_ status: TurnStatus) {
+extension ObservedTurnStatus {
+    public init(_ status: TurnStatus) {
         switch status {
         case .accepted:
             self = .accepted
@@ -147,8 +147,8 @@ public extension ObservedTurnStatus {
     }
 }
 
-public extension ObservedProviderRequest {
-    init(request: PersistedProviderRequestSummary) {
+extension ObservedProviderRequest {
+    public init(request: PersistedProviderRequestSummary) {
         self.init(
             id: request.id,
             runID: request.runID,
@@ -162,8 +162,8 @@ public extension ObservedProviderRequest {
     }
 }
 
-public extension ObservedContextTrace {
-    init(trace: PersistedContextTrace) {
+extension ObservedContextTrace {
+    public init(trace: PersistedContextTrace) {
         self.init(
             id: trace.id,
             runID: trace.runID,

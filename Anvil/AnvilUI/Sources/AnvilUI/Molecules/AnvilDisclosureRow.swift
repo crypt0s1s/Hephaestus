@@ -112,8 +112,8 @@ public struct AnvilDisclosureRow<Accessory: View, Content: View>: View {
     }
 }
 
-public extension AnvilDisclosureRow where Accessory == EmptyView {
-    init(
+extension AnvilDisclosureRow where Accessory == EmptyView {
+    public init(
         title: String,
         subtitle: String? = nil,
         systemImage: String? = nil,

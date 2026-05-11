@@ -11,7 +11,7 @@ public enum TaskWorkspaceRoutes {
             version: TaskWorkspaceRouteInput.version,
             decodeDeepLink: { url in
                 guard url.host == "route",
-                      url.pathComponents.first(where: { $0 != "/" }) == TaskWorkspaceRouteInput.routeID
+                    url.pathComponents.first(where: { $0 != "/" }) == TaskWorkspaceRouteInput.routeID
                 else { return nil }
                 let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
                 let taskIDValue = components?.queryItems?.first(where: { $0.name == "taskID" })?.value
@@ -42,7 +42,7 @@ public enum TaskWorkspaceRoutes {
             version: TaskWorkspaceSettingsModalInput.version,
             decodeDeepLink: { url in
                 guard url.host == "modal",
-                      url.pathComponents.first(where: { $0 != "/" }) == TaskWorkspaceSettingsModalInput.modalID
+                    url.pathComponents.first(where: { $0 != "/" }) == TaskWorkspaceSettingsModalInput.modalID
                 else { return nil }
                 return try AnyModalInput(TaskWorkspaceSettingsModalInput())
             },

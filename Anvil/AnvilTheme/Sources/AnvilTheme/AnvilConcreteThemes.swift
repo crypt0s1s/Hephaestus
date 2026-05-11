@@ -1,7 +1,7 @@
 import SwiftUI
 
-public extension AnvilTheme {
-    static let anvilWorkbench = AnvilTheme(
+extension AnvilTheme {
+    public static let anvilWorkbench = AnvilTheme(
         colors: .anvilWorkbench,
         spacing: .anvilWorkbench,
         typography: .anvilWorkbench,
@@ -9,7 +9,7 @@ public extension AnvilTheme {
         motion: .anvilWorkbench
     )
 
-    static let hephaestus = AnvilTheme(
+    public static let hephaestus = AnvilTheme(
         colors: .hephaestus,
         spacing: .hephaestus,
         typography: .hephaestus,
@@ -18,10 +18,10 @@ public extension AnvilTheme {
     )
 }
 
-public extension AnvilColors {
-    static let anvilWorkbench = AnvilColors.fallback
+extension AnvilColors {
+    public static let anvilWorkbench = AnvilColors.fallback
 
-    static let hephaestus = AnvilColors(
+    public static let hephaestus = AnvilColors(
         windowBackground: Color(red: 0.965, green: 0.967, blue: 0.970),
         sidebarBackground: Color(red: 0.925, green: 0.932, blue: 0.940),
         panelBackground: Color(red: 0.985, green: 0.986, blue: 0.988),
@@ -41,22 +41,22 @@ public extension AnvilColors {
     )
 }
 
-public extension AnvilSpacing {
-    static let anvilWorkbench = AnvilSpacing.fallback
-    static let hephaestus = AnvilSpacing.anvilWorkbench
+extension AnvilSpacing {
+    public static let anvilWorkbench = AnvilSpacing.fallback
+    public static let hephaestus = AnvilSpacing.anvilWorkbench
 }
 
-public extension AnvilTypography {
-    static let anvilWorkbench = AnvilTypography.fallback
-    static let hephaestus = AnvilTypography.anvilWorkbench
+extension AnvilTypography {
+    public static let anvilWorkbench = AnvilTypography.fallback
+    public static let hephaestus = AnvilTypography.anvilWorkbench
 }
 
-public extension AnvilRadii {
-    static let anvilWorkbench = AnvilRadii.fallback
-    static let hephaestus = AnvilRadii.anvilWorkbench
+extension AnvilRadii {
+    public static let anvilWorkbench = AnvilRadii.fallback
+    public static let hephaestus = AnvilRadii.anvilWorkbench
 }
 
-public extension AnvilMotion {
-    static let anvilWorkbench = AnvilMotion.fallback
-    static let hephaestus = AnvilMotion.anvilWorkbench
+extension AnvilMotion {
+    public static let anvilWorkbench = AnvilMotion.fallback
+    public static let hephaestus = AnvilMotion.anvilWorkbench
 }

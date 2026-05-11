@@ -146,10 +146,10 @@ public final class TaskWorkspaceService {
 
     private func syncSelectedRoute(_ id: UUID) {
         guard let router,
-              let route = try? AnyRouteInput(TaskWorkspaceRouteInput(taskID: id))
+            let route = try? AnyRouteInput(TaskWorkspaceRouteInput(taskID: id))
         else { return }
         if let current = router.path.last,
-           (try? current.decode(TaskWorkspaceRouteInput.self).taskID) == id {
+            (try? current.decode(TaskWorkspaceRouteInput.self).taskID) == id {
             return
         }
         router.replaceStack([route])

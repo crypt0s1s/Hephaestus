@@ -12,14 +12,14 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../HephaestusDomain"),
-        .package(path: "../HephaestusObservation")
+        .package(path: "../HephaestusObservation"),
     ],
     targets: [
         .target(
             name: "HephaestusHarness",
             dependencies: [
                 .product(name: "HephaestusDomain", package: "HephaestusDomain"),
-                .product(name: "HephaestusObservation", package: "HephaestusObservation")
+                .product(name: "HephaestusObservation", package: "HephaestusObservation"),
             ]
         )
     ]

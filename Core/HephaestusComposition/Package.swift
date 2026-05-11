@@ -14,7 +14,7 @@ let package = Package(
         .package(path: "../HephaestusHarness"),
         .package(path: "../HephaestusKernel"),
         .package(path: "../HephaestusLLM"),
-        .package(path: "../HephaestusRuntime")
+        .package(path: "../HephaestusRuntime"),
     ],
     targets: [
         .target(
@@ -23,7 +23,7 @@ let package = Package(
                 .product(name: "HephaestusHarness", package: "HephaestusHarness"),
                 .product(name: "HephaestusKernel", package: "HephaestusKernel"),
                 .product(name: "HephaestusLLM", package: "HephaestusLLM"),
-                .product(name: "HephaestusRuntime", package: "HephaestusRuntime")
+                .product(name: "HephaestusRuntime", package: "HephaestusRuntime"),
             ]
         )
     ]

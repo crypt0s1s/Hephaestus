@@ -32,6 +32,12 @@ function_body_length:
   warning: 40
   error: 60
 
+indentation_width:
+  indentation_width: 4
+  include_comments: true
+  include_compiler_directives: true
+  include_multiline_strings: false
+
 nesting:
   type_level:
     warning: 2
@@ -59,6 +65,7 @@ opt_in_rules:
   - fatal_error_message
   - final_test_case
   - first_where
+  - indentation_width
   - private_swiftui_state
   - redundant_nil_coalescing
   - sorted_first_last

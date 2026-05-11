@@ -3,397 +3,397 @@ import HephaestusKernel
 import HephaestusObservation
 
 public protocol LoadProviderSettingsUseCase: Sendable {
-  func loadProviderSettings() async throws -> ProviderSettingsSummary?
+    func loadProviderSettings() async throws -> ProviderSettingsSummary?
 }
 
 public protocol SaveProviderSettingsUseCase: Sendable {
-  func saveProviderSettings(_ draft: ProviderSettingsDraft, validatedAt: Date?) async throws
+    func saveProviderSettings(_ draft: ProviderSettingsDraft, validatedAt: Date?) async throws
 }
 
 public protocol ClearProviderSettingsUseCase: Sendable {
-  func clearProviderSettings() async throws
+    func clearProviderSettings() async throws
 }
 
 public protocol ValidateProviderSettingsUseCase: Sendable {
-  func validateProviderSettings(_ draft: ProviderSettingsDraft) async
-    -> ProviderSettingsValidationResult
+    func validateProviderSettings(_ draft: ProviderSettingsDraft) async
+        -> ProviderSettingsValidationResult
 }
 
 public protocol ListSessionsUseCase: Sendable {
-  func listSessions() async throws -> [PersistedSessionSummary]
+    func listSessions() async throws -> [PersistedSessionSummary]
 }
 
 public protocol LoadSessionUseCase: Sendable {
-  func loadSession(id: UUID) async throws -> PersistedSession
+    func loadSession(id: UUID) async throws -> PersistedSession
 }
 
 public protocol CreateSessionUseCase: Sendable {
-  func createSession(title: String?) async throws -> PersistedSession
+    func createSession(title: String?) async throws -> PersistedSession
 }
 
 public protocol InspectRunUseCase: Sendable {
-  func inspectRun(sessionID: UUID) async throws -> PersistedRunInspection
+    func inspectRun(sessionID: UUID) async throws -> PersistedRunInspection
 }
 
 public struct DefaultProviderSettingsUseCase:
-  LoadProviderSettingsUseCase,
-  SaveProviderSettingsUseCase,
-  ClearProviderSettingsUseCase {
-  private let store: AppStateStore
+    LoadProviderSettingsUseCase,
+    SaveProviderSettingsUseCase,
+    ClearProviderSettingsUseCase {
+    private let store: AppStateStore
 
-  public init(store: AppStateStore) {
-    self.store = store
-  }
-
-  public func loadProviderSettings() async throws -> ProviderSettingsSummary? {
-    guard let settings = try await store.load().providerSettings else {
-      return nil
+    public init(store: AppStateStore) {
+        self.store = store
     }
-    return settings.summary
-  }
 
-  public func saveProviderSettings(_ draft: ProviderSettingsDraft, validatedAt: Date?) async throws {
-    var state = try await store.load()
-    state.providerSettings = PersistedProviderSettings(
-      baseURLString: draft.baseURLString,
-      apiKey: draft.apiKey,
-      model: draft.model,
-      validatedAt: validatedAt
-    )
-    try await store.save(state)
-  }
+    public func loadProviderSettings() async throws -> ProviderSettingsSummary? {
+        guard let settings = try await store.load().providerSettings else {
+            return nil
+        }
+        return settings.summary
+    }
 
-  public func clearProviderSettings() async throws {
-    var state = try await store.load()
-    state.providerSettings = nil
-    try await store.save(state)
-  }
+    public func saveProviderSettings(_ draft: ProviderSettingsDraft, validatedAt: Date?) async throws {
+        var state = try await store.load()
+        state.providerSettings = PersistedProviderSettings(
+            baseURLString: draft.baseURLString,
+            apiKey: draft.apiKey,
+            model: draft.model,
+            validatedAt: validatedAt
+        )
+        try await store.save(state)
+    }
+
+    public func clearProviderSettings() async throws {
+        var state = try await store.load()
+        state.providerSettings = nil
+        try await store.save(state)
+    }
 }
 
 public struct DefaultListSessionsUseCase: ListSessionsUseCase {
-  private let store: AppStateStore
+    private let store: AppStateStore
 
-  public init(store: AppStateStore) {
-    self.store = store
-  }
+    public init(store: AppStateStore) {
+        self.store = store
+    }
 
-  public func listSessions() async throws -> [PersistedSessionSummary] {
-    try await store.load().sessions
-      .map(\.summary)
-      .sorted { $0.updatedAt > $1.updatedAt }
-  }
+    public func listSessions() async throws -> [PersistedSessionSummary] {
+        try await store.load().sessions
+            .map(\.summary)
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
 }
 
 public struct DefaultLoadSessionUseCase: LoadSessionUseCase {
-  private let store: AppStateStore
-  private let runStore: InMemoryRunStore
-  private let makeRun: @Sendable (PersistedSession) -> Run
+    private let store: AppStateStore
+    private let runStore: InMemoryRunStore
+    private let makeRun: @Sendable (PersistedSession) -> Run
 
-  public init(
-    store: AppStateStore,
-    runStore: InMemoryRunStore,
-    makeRun: @escaping @Sendable (PersistedSession) -> Run
-  ) {
-    self.store = store
-    self.runStore = runStore
-    self.makeRun = makeRun
-  }
-
-  public func loadSession(id: UUID) async throws -> PersistedSession {
-    let session = try await session(id: id)
-    if await !runStore.contains(id: id) {
-      await runStore.insert(makeRun(session))
+    public init(
+        store: AppStateStore,
+        runStore: InMemoryRunStore,
+        makeRun: @escaping @Sendable (PersistedSession) -> Run
+    ) {
+        self.store = store
+        self.runStore = runStore
+        self.makeRun = makeRun
     }
-    return session
-  }
 
-  private func session(id: UUID) async throws -> PersistedSession {
-    let state = try await store.load()
-    guard let session = state.sessions.first(where: { $0.id == id }) else {
-      throw AppStateStoreFailure.sessionNotFound(id)
+    public func loadSession(id: UUID) async throws -> PersistedSession {
+        let session = try await session(id: id)
+        if await !runStore.contains(id: id) {
+            await runStore.insert(makeRun(session))
+        }
+        return session
     }
-    return session
-  }
+
+    private func session(id: UUID) async throws -> PersistedSession {
+        let state = try await store.load()
+        guard let session = state.sessions.first(where: { $0.id == id }) else {
+            throw AppStateStoreFailure.sessionNotFound(id)
+        }
+        return session
+    }
 }
 
 public struct DefaultCreateSessionUseCase: CreateRunUseCase, CreateSessionUseCase {
-  private let store: AppStateStore
-  private let runStore: InMemoryRunStore
-  private let makeRun: @Sendable (PersistedSession) -> Run
+    private let store: AppStateStore
+    private let runStore: InMemoryRunStore
+    private let makeRun: @Sendable (PersistedSession) -> Run
 
-  public init(
-    store: AppStateStore,
-    runStore: InMemoryRunStore,
-    makeRun: @escaping @Sendable (PersistedSession) -> Run
-  ) {
-    self.store = store
-    self.runStore = runStore
-    self.makeRun = makeRun
-  }
-
-  public func createRun() async -> UUID {
-    do {
-      return try await createSession(title: nil).id
-    } catch {
-      return await runStore.createRun()
+    public init(
+        store: AppStateStore,
+        runStore: InMemoryRunStore,
+        makeRun: @escaping @Sendable (PersistedSession) -> Run
+    ) {
+        self.store = store
+        self.runStore = runStore
+        self.makeRun = makeRun
     }
-  }
 
-  public func createSession(title: String?) async throws -> PersistedSession {
-    let now = Date()
-    let session = PersistedSession(
-      title: title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "New Chat",
-      createdAt: now,
-      updatedAt: now
-    )
-    var state = try await store.load()
-    state.sessions.append(session)
-    try await store.save(state)
-    await runStore.insert(makeRun(session))
-    return session
-  }
+    public func createRun() async -> UUID {
+        do {
+            return try await createSession(title: nil).id
+        } catch {
+            return await runStore.createRun()
+        }
+    }
+
+    public func createSession(title: String?) async throws -> PersistedSession {
+        let now = Date()
+        let session = PersistedSession(
+            title: title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "New Chat",
+            createdAt: now,
+            updatedAt: now
+        )
+        var state = try await store.load()
+        state.sessions.append(session)
+        try await store.save(state)
+        await runStore.insert(makeRun(session))
+        return session
+    }
 }
 
 public struct DefaultInspectRunUseCase: InspectRunUseCase, LoadRunInspectionUseCase {
-  private let store: AppStateStore
+    private let store: AppStateStore
 
-  public init(store: AppStateStore) {
-    self.store = store
-  }
-
-  public func inspectRun(sessionID: UUID) async throws -> PersistedRunInspection {
-    let state = try await store.load()
-    guard let session = state.sessions.first(where: { $0.id == sessionID }) else {
-      throw AppStateStoreFailure.sessionNotFound(sessionID)
+    public init(store: AppStateStore) {
+        self.store = store
     }
-    return PersistedRunInspection(session: session)
-  }
 
-  public func loadRunInspection(runID: UUID) async throws -> RunInspectionSnapshot {
-    try await RunInspectionSnapshot(inspection: inspectRun(sessionID: runID))
-  }
+    public func inspectRun(sessionID: UUID) async throws -> PersistedRunInspection {
+        let state = try await store.load()
+        guard let session = state.sessions.first(where: { $0.id == sessionID }) else {
+            throw AppStateStoreFailure.sessionNotFound(sessionID)
+        }
+        return PersistedRunInspection(session: session)
+    }
+
+    public func loadRunInspection(runID: UUID) async throws -> RunInspectionSnapshot {
+        try await RunInspectionSnapshot(inspection: inspectRun(sessionID: runID))
+    }
 }
 
 public struct PersistentStreamUserMessageUseCase: StreamUserMessageUseCase {
-  private let store: AppStateStore
-  private let runStore: InMemoryRunStore
-  private let eventHub: RuntimeEventHub
-  private let makeRun: @Sendable (PersistedSession) -> Run
+    private let store: AppStateStore
+    private let runStore: InMemoryRunStore
+    private let eventHub: RuntimeEventHub
+    private let makeRun: @Sendable (PersistedSession) -> Run
 
-  public init(
-    store: AppStateStore,
-    runStore: InMemoryRunStore,
-    eventHub: RuntimeEventHub,
-    makeRun: @escaping @Sendable (PersistedSession) -> Run
-  ) {
-    self.store = store
-    self.runStore = runStore
-    self.eventHub = eventHub
-    self.makeRun = makeRun
-  }
-
-  public func streamUserMessage(
-    runID: UUID,
-    text: String
-  ) async throws -> AsyncThrowingStream<RuntimeEvent, Error> {
-    let session = try await session(id: runID)
-    if await !runStore.contains(id: runID) {
-      await runStore.insert(makeRun(session))
+    public init(
+        store: AppStateStore,
+        runStore: InMemoryRunStore,
+        eventHub: RuntimeEventHub,
+        makeRun: @escaping @Sendable (PersistedSession) -> Run
+    ) {
+        self.store = store
+        self.runStore = runStore
+        self.eventHub = eventHub
+        self.makeRun = makeRun
     }
 
-    let run = try await runStore.run(id: runID)
-    let runEvents = await run.streamUserMessage(text)
+    public func streamUserMessage(
+        runID: UUID,
+        text: String
+    ) async throws -> AsyncThrowingStream<RuntimeEvent, Error> {
+        let session = try await session(id: runID)
+        if await !runStore.contains(id: runID) {
+            await runStore.insert(makeRun(session))
+        }
 
-    return AsyncThrowingStream { continuation in
-      let cancellationState = PersistentStreamCancellationState()
-      let task = Task {
-        do {
-          for try await event in runEvents {
-            await cancellationState.record(event.header)
-            let runtimeEvent = RuntimeEvent(event)
-            try await persist(event, runtimeEvent: runtimeEvent, sessionID: runID)
-            await eventHub.publish(runtimeEvent, runID: runID)
-            if event.isTerminal {
-              await cancellationState.recordTerminalEvent()
+        let run = try await runStore.run(id: runID)
+        let runEvents = await run.streamUserMessage(text)
+
+        return AsyncThrowingStream { continuation in
+            let cancellationState = PersistentStreamCancellationState()
+            let task = Task {
+                do {
+                    for try await event in runEvents {
+                        await cancellationState.record(event.header)
+                        let runtimeEvent = RuntimeEvent(event)
+                        try await persist(event, runtimeEvent: runtimeEvent, sessionID: runID)
+                        await eventHub.publish(runtimeEvent, runID: runID)
+                        if event.isTerminal {
+                            await cancellationState.recordTerminalEvent()
+                        }
+                        continuation.yield(runtimeEvent)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
             }
-            continuation.yield(runtimeEvent)
-          }
-          continuation.finish()
-        } catch {
-          continuation.finish(throwing: error)
+            continuation.onTermination = { @Sendable termination in
+                guard case .cancelled = termination else { return }
+                task.cancel()
+                Task {
+                    guard let event = await cancellationState.makeCancellationEvent() else { return }
+                    let runtimeEvent = RuntimeEvent(event)
+                    try? await persist(event, runtimeEvent: runtimeEvent, sessionID: runID)
+                    await eventHub.publish(runtimeEvent, runID: runID)
+                }
+            }
         }
-      }
-      continuation.onTermination = { @Sendable termination in
-        guard case .cancelled = termination else { return }
-        task.cancel()
-        Task {
-          guard let event = await cancellationState.makeCancellationEvent() else { return }
-          let runtimeEvent = RuntimeEvent(event)
-          try? await persist(event, runtimeEvent: runtimeEvent, sessionID: runID)
-          await eventHub.publish(runtimeEvent, runID: runID)
+    }
+
+    private func session(id: UUID) async throws -> PersistedSession {
+        let state = try await store.load()
+        guard let session = state.sessions.first(where: { $0.id == id }) else {
+            throw AppStateStoreFailure.sessionNotFound(id)
         }
-      }
-    }
-  }
-
-  private func session(id: UUID) async throws -> PersistedSession {
-    let state = try await store.load()
-    guard let session = state.sessions.first(where: { $0.id == id }) else {
-      throw AppStateStoreFailure.sessionNotFound(id)
-    }
-    return session
-  }
-
-  private func persist(
-    _ event: RunEvent,
-    runtimeEvent: RuntimeEvent,
-    sessionID: UUID
-  ) async throws {
-    var state = try await store.load()
-    guard let index = state.sessions.firstIndex(where: { $0.id == sessionID }) else {
-      throw AppStateStoreFailure.sessionNotFound(sessionID)
+        return session
     }
 
-    var session = state.sessions[index]
-    session.apply(event, runtimeEvent: runtimeEvent)
-    state.sessions[index] = session
-    try await store.save(state)
-  }
+    private func persist(
+        _ event: RunEvent,
+        runtimeEvent: RuntimeEvent,
+        sessionID: UUID
+    ) async throws {
+        var state = try await store.load()
+        guard let index = state.sessions.firstIndex(where: { $0.id == sessionID }) else {
+            throw AppStateStoreFailure.sessionNotFound(sessionID)
+        }
+
+        var session = state.sessions[index]
+        session.apply(event, runtimeEvent: runtimeEvent)
+        state.sessions[index] = session
+        try await store.save(state)
+    }
 }
 
 private actor PersistentStreamCancellationState {
-  private var lastHeader: EventHeader?
-  private var didRecordTerminalEvent = false
+    private var lastHeader: EventHeader?
+    private var didRecordTerminalEvent = false
 
-  func record(_ header: EventHeader) {
-    lastHeader = header
-  }
-
-  func recordTerminalEvent() {
-    didRecordTerminalEvent = true
-  }
-
-  func makeCancellationEvent() -> RunEvent? {
-    guard !didRecordTerminalEvent,
-      let lastHeader,
-      let turnID = lastHeader.turnID
-    else {
-      return nil
+    func record(_ header: EventHeader) {
+        lastHeader = header
     }
 
-    didRecordTerminalEvent = true
-    return .turnCancelled(
-      EventHeader(
-        runID: lastHeader.runID,
-        turnID: turnID,
-        sequence: lastHeader.sequence + 1
-      ))
-  }
+    func recordTerminalEvent() {
+        didRecordTerminalEvent = true
+    }
+
+    func makeCancellationEvent() -> RunEvent? {
+        guard !didRecordTerminalEvent,
+            let lastHeader,
+            let turnID = lastHeader.turnID
+        else {
+            return nil
+        }
+
+        didRecordTerminalEvent = true
+        return .turnCancelled(
+            EventHeader(
+                runID: lastHeader.runID,
+                turnID: turnID,
+                sequence: lastHeader.sequence + 1
+            ))
+    }
 }
 
 extension RunEvent {
-  fileprivate var isTerminal: Bool {
-    switch self {
-    case .assistantMessageCompleted, .turnCancelled, .turnFailed:
-      true
-    case .userMessageAccepted, .contextPrepared, .providerRequestPrepared, .providerChunkReceived:
-      false
+    fileprivate var isTerminal: Bool {
+        switch self {
+        case .assistantMessageCompleted, .turnCancelled, .turnFailed:
+            true
+        case .userMessageAccepted, .contextPrepared, .providerRequestPrepared, .providerChunkReceived:
+            false
+        }
     }
-  }
 }
 
 extension PersistedSession {
-  public var summary: PersistedSessionSummary {
-    PersistedSessionSummary(
-      id: id,
-      title: title,
-      createdAt: createdAt,
-      updatedAt: updatedAt,
-      messageCount: messages.count
-    )
-  }
-
-  mutating func apply(_ event: RunEvent, runtimeEvent: RuntimeEvent) {
-    updatedAt = runtimeEvent.header.createdAt
-    events.append(PersistedRuntimeEvent(runtimeEvent))
-
-    switch event {
-    case .userMessageAccepted(_, let message):
-      applyAcceptedUserMessage(message, runtimeEvent: runtimeEvent)
-    case .contextPrepared(let header, let trace):
-      applyPreparedContext(header: header, trace: trace)
-    case .providerRequestPrepared(let header, let request):
-      applyPreparedProviderRequest(header: header, request: request)
-    case .providerChunkReceived(let header, _, _):
-      guard let turnID = header.turnID else { return }
-      updateTurn(turnID) { $0.status = .streaming }
-    case .assistantMessageCompleted(_, let message):
-      applyCompletedAssistantMessage(message)
-    case .turnCancelled(let header):
-      guard let turnID = header.turnID else { return }
-      updateTurn(turnID) { $0.status = .cancelled }
-    case .turnFailed(let header, _):
-      guard let turnID = header.turnID else { return }
-      updateTurn(turnID) { $0.status = .failed }
+    public var summary: PersistedSessionSummary {
+        PersistedSessionSummary(
+            id: id,
+            title: title,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            messageCount: messages.count
+        )
     }
-  }
 
-  private mutating func updateTurn(_ id: UUID, update: (inout Turn) -> Void) {
-    guard let index = turns.firstIndex(where: { $0.id == id }) else { return }
-    update(&turns[index])
-  }
+    mutating func apply(_ event: RunEvent, runtimeEvent: RuntimeEvent) {
+        updatedAt = runtimeEvent.header.createdAt
+        events.append(PersistedRuntimeEvent(runtimeEvent))
 
-  private mutating func applyAcceptedUserMessage(
-    _ message: RunMessage,
-    runtimeEvent: RuntimeEvent
-  ) {
-    messages.append(message)
-    title = title == "New Chat" ? message.text.firstLineTitle : title
-    turns.append(
-      Turn(
-        id: message.turnID ?? runtimeEvent.header.turnID ?? UUID(),
-        runID: id,
-        status: .accepted,
-        userMessageID: message.id
-      ))
-  }
-
-  private mutating func applyPreparedContext(header: EventHeader, trace: ContextAssemblyTrace) {
-    guard let turnID = header.turnID else { return }
-    contextTraces.append(
-      PersistedContextTrace(
-        runID: id,
-        turnID: turnID,
-        policyID: "recent",
-        policyName: "Recent messages",
-        messageLimit: trace.messageLimit,
-        includedMessageIDs: trace.includedMessageIDs,
-        excludedMessageIDs: trace.excludedMessageIDs,
-        createdAt: header.createdAt
-      ))
-    updateTurn(turnID) { $0.status = .preparingContext }
-  }
-
-  private mutating func applyPreparedProviderRequest(
-    header: EventHeader,
-    request: ProviderRequest
-  ) {
-    guard let turnID = header.turnID else { return }
-    providerRequests.append(
-      PersistedProviderRequestSummary(request: request, createdAt: header.createdAt))
-    updateTurn(turnID) {
-      $0.status = .awaitingProvider
-      $0.providerRequestID = request.id
+        switch event {
+        case .userMessageAccepted(_, let message):
+            applyAcceptedUserMessage(message, runtimeEvent: runtimeEvent)
+        case .contextPrepared(let header, let trace):
+            applyPreparedContext(header: header, trace: trace)
+        case .providerRequestPrepared(let header, let request):
+            applyPreparedProviderRequest(header: header, request: request)
+        case .providerChunkReceived(let header, _, _):
+            guard let turnID = header.turnID else { return }
+            updateTurn(turnID) { $0.status = .streaming }
+        case .assistantMessageCompleted(_, let message):
+            applyCompletedAssistantMessage(message)
+        case .turnCancelled(let header):
+            guard let turnID = header.turnID else { return }
+            updateTurn(turnID) { $0.status = .cancelled }
+        case .turnFailed(let header, _):
+            guard let turnID = header.turnID else { return }
+            updateTurn(turnID) { $0.status = .failed }
+        }
     }
-  }
 
-  private mutating func applyCompletedAssistantMessage(_ message: RunMessage) {
-    messages.append(message)
-    if let turnID = message.turnID {
-      updateTurn(turnID) {
-        $0.status = .succeeded
-        $0.assistantMessageID = message.id
-      }
+    private mutating func updateTurn(_ id: UUID, update: (inout Turn) -> Void) {
+        guard let index = turns.firstIndex(where: { $0.id == id }) else { return }
+        update(&turns[index])
     }
-  }
+
+    private mutating func applyAcceptedUserMessage(
+        _ message: RunMessage,
+        runtimeEvent: RuntimeEvent
+    ) {
+        messages.append(message)
+        title = title == "New Chat" ? message.text.firstLineTitle : title
+        turns.append(
+            Turn(
+                id: message.turnID ?? runtimeEvent.header.turnID ?? UUID(),
+                runID: id,
+                status: .accepted,
+                userMessageID: message.id
+            ))
+    }
+
+    private mutating func applyPreparedContext(header: EventHeader, trace: ContextAssemblyTrace) {
+        guard let turnID = header.turnID else { return }
+        contextTraces.append(
+            PersistedContextTrace(
+                runID: id,
+                turnID: turnID,
+                policyID: "recent",
+                policyName: "Recent messages",
+                messageLimit: trace.messageLimit,
+                includedMessageIDs: trace.includedMessageIDs,
+                excludedMessageIDs: trace.excludedMessageIDs,
+                createdAt: header.createdAt
+            ))
+        updateTurn(turnID) { $0.status = .preparingContext }
+    }
+
+    private mutating func applyPreparedProviderRequest(
+        header: EventHeader,
+        request: ProviderRequest
+    ) {
+        guard let turnID = header.turnID else { return }
+        providerRequests.append(
+            PersistedProviderRequestSummary(request: request, createdAt: header.createdAt))
+        updateTurn(turnID) {
+            $0.status = .awaitingProvider
+            $0.providerRequestID = request.id
+        }
+    }
+
+    private mutating func applyCompletedAssistantMessage(_ message: RunMessage) {
+        messages.append(message)
+        if let turnID = message.turnID {
+            updateTurn(turnID) {
+                $0.status = .succeeded
+                $0.assistantMessageID = message.id
+            }
+        }
+    }
 }

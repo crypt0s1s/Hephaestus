@@ -14,13 +14,13 @@ public enum RuntimeEvent: Sendable, Hashable {
     public var header: RuntimeEventHeader {
         switch self {
         case .runCreated(let header, _),
-             .userMessageAccepted(let header, _, _),
-             .contextPrepared(let header, _),
-             .providerRequestPrepared(let header, _, _, _),
-             .assistantTextDelta(let header, _),
-             .assistantMessageCompleted(let header, _, _),
-             .turnCancelled(let header),
-             .turnFailed(let header, _):
+            .userMessageAccepted(let header, _, _),
+            .contextPrepared(let header, _),
+            .providerRequestPrepared(let header, _, _, _),
+            .assistantTextDelta(let header, _),
+            .assistantMessageCompleted(let header, _, _),
+            .turnCancelled(let header),
+            .turnFailed(let header, _):
             return header
         }
     }

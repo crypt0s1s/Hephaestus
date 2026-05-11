@@ -162,12 +162,12 @@ public enum RunEvent: Sendable, Hashable, Identifiable {
     public var header: EventHeader {
         switch self {
         case .userMessageAccepted(let header, _),
-             .contextPrepared(let header, _),
-             .providerRequestPrepared(let header, _),
-             .providerChunkReceived(let header, _, _),
-             .assistantMessageCompleted(let header, _),
-             .turnCancelled(let header),
-             .turnFailed(let header, _):
+            .contextPrepared(let header, _),
+            .providerRequestPrepared(let header, _),
+            .providerChunkReceived(let header, _, _),
+            .assistantMessageCompleted(let header, _),
+            .turnCancelled(let header),
+            .turnFailed(let header, _):
             return header
         }
     }
@@ -312,9 +312,10 @@ public actor Run {
             runID: id,
             turnID: turnID,
             model: agent.profile.defaultModel,
-            messages: [ProviderMessage(role: .system, text: context.systemPrompt)] + context.messages.map {
-                ProviderMessage(role: $0.role, text: $0.text)
-            },
+            messages: [ProviderMessage(role: .system, text: context.systemPrompt)]
+                + context.messages.map {
+                    ProviderMessage(role: $0.role, text: $0.text)
+                },
             stream: true
         )
     }

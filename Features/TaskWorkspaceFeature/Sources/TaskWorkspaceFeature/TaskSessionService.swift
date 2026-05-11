@@ -122,7 +122,7 @@ public final class TaskSessionService {
                 acceptUserMessage(messageID: messageID, text: text, header: header, snapshot: &snapshot)
                 shouldRefreshSummary = true
             case .contextPrepared(let header, _),
-                 .providerRequestPrepared(let header, _, _, _):
+                .providerRequestPrepared(let header, _, _, _):
                 markTurnRunning(header: header, snapshot: &snapshot)
             case .assistantTextDelta(let header, let text):
                 applyAssistantDelta(text, header: header, messages: &messages, snapshot: &snapshot)

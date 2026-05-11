@@ -7,13 +7,16 @@ actor WorkflowDebugLog {
 
     init(projectName: String, fileManager: FileManager = .default) {
         self.fileManager = fileManager
-        let baseURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let baseURL =
+            fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        let directoryURL = baseURL
+        let directoryURL =
+            baseURL
             .appendingPathComponent("Hephaestus", isDirectory: true)
             .appendingPathComponent("WorkflowLogs", isDirectory: true)
         try? fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        let safeProjectName = projectName
+        let safeProjectName =
+            projectName
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
         let runDirectoryName = "\(Self.timestamp())-\(safeProjectName)"
@@ -49,7 +52,8 @@ actor WorkflowDebugLog {
     }
 
     private func fileURL(for fileName: String) -> URL {
-        let safeFileName = fileName
+        let safeFileName =
+            fileName
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
         return directoryURL.appendingPathComponent(safeFileName)

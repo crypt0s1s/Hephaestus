@@ -15,10 +15,12 @@ struct RouteHost: View {
                 ProgressView("Opening Hephaestus...")
             }
         }
-        .sheet(item: Binding(
-            get: { router.modal },
-            set: { if $0 == nil { router.dismissModal() } }
-        )) { modal in
+        .sheet(
+            item: Binding(
+                get: { router.modal },
+                set: { if $0 == nil { router.dismissModal() } }
+            )
+        ) { modal in
             buildModal(modal)
         }
     }

@@ -8,7 +8,7 @@ public enum FoundryBackend {
         capabilities: [
             .liveEvents,
             .conversation,
-            .resume
+            .resume,
         ]
     )
 }

@@ -10,7 +10,8 @@ struct DefaultProcessRunner: WorkflowProcessRunning {
         await withCheckedContinuation { continuation in
             let process = Process()
             process.executableURL = executable
-            process.arguments = executable.lastPathComponent == "env" && arguments.first != "git"
+            process.arguments =
+                executable.lastPathComponent == "env" && arguments.first != "git"
                 ? ["codex"] + arguments
                 : arguments
             process.currentDirectoryURL = currentDirectoryURL

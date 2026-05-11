@@ -83,8 +83,8 @@ public struct AnvilSidebarRow<Trailing: View>: View {
     }
 }
 
-public extension AnvilSidebarRow where Trailing == EmptyView {
-    init(
+extension AnvilSidebarRow where Trailing == EmptyView {
+    public init(
         title: String,
         subtitle: String? = nil,
         systemImage: String? = nil,

@@ -19,25 +19,30 @@ struct ExternalWorkflowDiscovery {
         var workflows: [WorkflowDefinition] = []
         for root in workflowRoots {
             guard let manifest = loadManifest(packageURL: root),
-                  let description = await describe(manifest: manifest) else {
+                let description = await describe(manifest: manifest)
+            else {
                 continue
             }
-            workflows.append(WorkflowDefinition(
-                externalDescription: description,
-                packageURL: root,
-                entryName: manifest.entry
-            ))
+            workflows.append(
+                WorkflowDefinition(
+                    externalDescription: description,
+                    packageURL: root,
+                    entryName: manifest.entry
+                ))
         }
         return workflows
     }
 
     private var workflowRoots: [URL] {
-        guard let rawValue = environment["HEPHAESTUS_EXTERNAL_WORKFLOW_ROOTS"]
-            ?? environment["HEPHAESTUS_EXTERNAL_WORKFLOW_ROOT"] else {
+        guard
+            let rawValue = environment["HEPHAESTUS_EXTERNAL_WORKFLOW_ROOTS"]
+                ?? environment["HEPHAESTUS_EXTERNAL_WORKFLOW_ROOT"]
+        else {
             return []
         }
 
-        return rawValue
+        return
+            rawValue
             .split(separator: ":")
             .map { URL(fileURLWithPath: String($0), isDirectory: true) }
             .filter { fileManager.fileExists(atPath: $0.path) }
@@ -50,10 +55,11 @@ struct ExternalWorkflowDiscovery {
         }
         let values = parseManifest(contents)
         guard let id = values["id"],
-              let name = values["name"],
-              let version = values["version"],
-              let runtime = values["runtime"],
-              let entry = values["entry"] else {
+            let name = values["name"],
+            let version = values["version"],
+            let runtime = values["runtime"],
+            let entry = values["entry"]
+        else {
             return nil
         }
         return ExternalWorkflowManifest(
@@ -75,7 +81,7 @@ struct ExternalWorkflowDiscovery {
                 "--package-path", manifest.packageURL.path,
                 "--scratch-path", SwiftPackageScratchPath.url(for: manifest.packageURL).path,
                 manifest.entry,
-                "describe"
+                "describe",
             ],
             currentDirectoryURL: manifest.packageURL,
             timeoutSeconds: 120
@@ -91,7 +97,7 @@ struct ExternalWorkflowDiscovery {
             let jsonCandidate = String(output[start...])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if let data = jsonCandidate.data(using: .utf8),
-               let description = try? JSONDecoder().decode(WorkflowDescription.self, from: data) {
+                let description = try? JSONDecoder().decode(WorkflowDescription.self, from: data) {
                 return description
             }
         }
@@ -111,7 +117,8 @@ struct ExternalWorkflowDiscovery {
         for line in contents.split(separator: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty, !trimmed.hasPrefix("#"),
-                  let separator = trimmed.firstIndex(of: "=") else {
+                let separator = trimmed.firstIndex(of: "=")
+            else {
                 continue
             }
             let key = trimmed[..<separator].trimmingCharacters(in: .whitespacesAndNewlines)

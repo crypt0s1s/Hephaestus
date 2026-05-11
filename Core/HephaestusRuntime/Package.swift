@@ -13,7 +13,7 @@ let package = Package(
     dependencies: [
         .package(path: "../HephaestusDomain"),
         .package(path: "../HephaestusKernel"),
-        .package(path: "../HephaestusObservation")
+        .package(path: "../HephaestusObservation"),
     ],
     targets: [
         .target(
@@ -21,7 +21,7 @@ let package = Package(
             dependencies: [
                 .product(name: "HephaestusDomain", package: "HephaestusDomain"),
                 .product(name: "HephaestusKernel", package: "HephaestusKernel"),
-                .product(name: "HephaestusObservation", package: "HephaestusObservation")
+                .product(name: "HephaestusObservation", package: "HephaestusObservation"),
             ]
         )
     ]

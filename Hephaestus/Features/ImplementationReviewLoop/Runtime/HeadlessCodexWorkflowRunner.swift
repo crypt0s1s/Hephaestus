@@ -17,11 +17,11 @@ struct HeadlessCodexWorkflowRunner {
                     name: "Create HelloWorld.txt",
                     project: project,
                     prompt: """
-                Create a file named HelloWorld.txt in the current working directory.
-                The file must contain exactly:
-                Hello from Hephaestus workflow
-                Do not modify any other files.
-                """
+                        Create a file named HelloWorld.txt in the current working directory.
+                        The file must contain exactly:
+                        Hello from Hephaestus workflow
+                        Do not modify any other files.
+                        """
                 )
             )
             guard createResult.exitCode == 0 else {
@@ -33,9 +33,9 @@ struct HeadlessCodexWorkflowRunner {
                     name: "Delete HelloWorld.txt",
                     project: project,
                     prompt: """
-                Delete the file named HelloWorld.txt from the current working directory.
-                Do not modify any other files.
-                """
+                        Delete the file named HelloWorld.txt from the current working directory.
+                        Do not modify any other files.
+                        """
                 )
             )
 

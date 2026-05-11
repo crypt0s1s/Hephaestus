@@ -6,8 +6,8 @@ public enum StoreState<Data, Failure: Error> {
     case error(Failure)
 }
 
-public extension StoreState {
-    var data: Data? {
+extension StoreState {
+    public var data: Data? {
         switch self {
         case .loading(let placeholder):
             placeholder
@@ -18,21 +18,21 @@ public extension StoreState {
         }
     }
 
-    var isLoading: Bool {
+    public var isLoading: Bool {
         if case .loading = self {
             return true
         }
         return false
     }
 
-    var failure: Failure? {
+    public var failure: Failure? {
         if case .error(let failure) = self {
             return failure
         }
         return nil
     }
 
-    func mapError<NextFailure: Error>(_ transform: (Failure) -> NextFailure) -> StoreState<Data, NextFailure> {
+    public func mapError<NextFailure: Error>(_ transform: (Failure) -> NextFailure) -> StoreState<Data, NextFailure> {
         switch self {
         case .loading(let placeholder):
             .loading(placeholder: placeholder)

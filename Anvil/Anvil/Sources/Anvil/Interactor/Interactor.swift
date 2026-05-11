@@ -13,7 +13,7 @@ public protocol Interactor: ObservableObject {
     func onDisappear()
 }
 
-public extension Interactor {
-    func onAppear() {}
-    func onDisappear() {}
+extension Interactor {
+    public func onAppear() {}
+    public func onDisappear() {}
 }

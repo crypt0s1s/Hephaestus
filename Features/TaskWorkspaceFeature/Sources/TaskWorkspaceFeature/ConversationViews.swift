@@ -9,7 +9,7 @@ struct EmptyTaskState: View {
             message: "Describe the task, then inspect the run as it moves through the workspace.",
             systemImage: "sparkles"
         )
-            .accessibilityIdentifier(TaskWorkspaceAccessibilityID.emptyState)
+        .accessibilityIdentifier(TaskWorkspaceAccessibilityID.emptyState)
     }
 }
 
@@ -38,8 +38,8 @@ struct ErrorBanner: View {
             tone: .danger,
             systemImage: "exclamationmark.triangle.fill"
         )
-            .accessibilityLabel("Task error: \(message)")
-            .accessibilityIdentifier(TaskWorkspaceAccessibilityID.errorBanner)
+        .accessibilityLabel("Task error: \(message)")
+        .accessibilityIdentifier(TaskWorkspaceAccessibilityID.errorBanner)
     }
 }
 

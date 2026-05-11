@@ -54,15 +54,17 @@ public struct TaskSessionSnapshot: Equatable, Sendable {
         updatedAt: Date = Date()
     ) {
         self.id = id
-        self.task = task ?? AgentTask(
-            id: TaskID(rawValue: id),
-            projectID: DefaultProject.id,
-            title: title,
-            status: .draft,
-            createdAt: updatedAt,
-            updatedAt: updatedAt,
-            activeRunID: id
-        )
+        self.task =
+            task
+            ?? AgentTask(
+                id: TaskID(rawValue: id),
+                projectID: DefaultProject.id,
+                title: title,
+                status: .draft,
+                createdAt: updatedAt,
+                updatedAt: updatedAt,
+                activeRunID: id
+            )
         self.title = title
         self.transcript = transcript
         self.turnState = turnState

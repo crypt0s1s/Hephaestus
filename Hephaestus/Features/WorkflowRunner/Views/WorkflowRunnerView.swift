@@ -4,298 +4,298 @@ import AppKit
 import SwiftUI
 
 struct WorkflowRunnerView: View {
-  @ObservedObject var model: WorkflowRunnerModel
-  @Environment(\.anvilTheme) private var theme
+    @ObservedObject var model: WorkflowRunnerModel
+    @Environment(\.anvilTheme) private var theme
 
-  var body: some View {
-    HStack(spacing: 0) {
-      ProjectSidebar(model: model)
-        .frame(width: sidebarWidth)
+    var body: some View {
+        HStack(spacing: 0) {
+            ProjectSidebar(model: model)
+                .frame(width: sidebarWidth)
 
-      Divider()
+            Divider()
 
-      WorkflowDetail(model: model)
+            WorkflowDetail(model: model)
+        }
+        .frame(minWidth: minWindowWidth, minHeight: minWindowHeight)
+        .background(theme.colors.windowBackground)
     }
-    .frame(minWidth: minWindowWidth, minHeight: minWindowHeight)
-    .background(theme.colors.windowBackground)
-  }
 
-  private var sidebarWidth: CGFloat { 300 }
-  private var minWindowWidth: CGFloat { 920 }
-  private var minWindowHeight: CGFloat { 560 }
+    private var sidebarWidth: CGFloat { 300 }
+    private var minWindowWidth: CGFloat { 920 }
+    private var minWindowHeight: CGFloat { 560 }
 }
 
 private struct ProjectSidebar: View {
-  @ObservedObject var model: WorkflowRunnerModel
-  @Environment(\.anvilTheme) private var theme
+    @ObservedObject var model: WorkflowRunnerModel
+    @Environment(\.anvilTheme) private var theme
 
-  var body: some View {
-    VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
-      HStack {
-        Text("Projects")
-          .font(theme.typography.sectionTitle)
-          .foregroundStyle(theme.colors.textSecondary)
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
+            HStack {
+                Text("Projects")
+                    .font(theme.typography.sectionTitle)
+                    .foregroundStyle(theme.colors.textSecondary)
 
-        Spacer()
+                Spacer()
 
-        AnvilIconButton(
-          systemName: "folder.badge.plus",
-          accessibilityLabel: "Select project",
-          help: "Select project folder"
-        ) {
-          model.selectProjectFolder()
-        }
-      }
-      .padding(.horizontal, theme.spacing.roomy)
-      .padding(.top, theme.spacing.roomy)
-
-      if model.state.projects.isEmpty {
-        AnvilEmptyState(
-          title: "No projects",
-          message: "Select a project folder to run a workflow.",
-          systemImage: "folder"
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-      } else {
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: theme.spacing.compact) {
-            ForEach(model.state.projects) { project in
-              ProjectRow(
-                project: project,
-                isSelected: project.id == model.state.selectedProjectID,
-                branchName: model.state.branchName(for: project)
-              ) {
-                model.selectProject(project)
-              }
+                AnvilIconButton(
+                    systemName: "folder.badge.plus",
+                    accessibilityLabel: "Select project",
+                    help: "Select project folder"
+                ) {
+                    model.selectProjectFolder()
+                }
             }
-          }
-          .padding(.horizontal, theme.spacing.cozy)
-          .padding(.bottom, theme.spacing.roomy)
+            .padding(.horizontal, theme.spacing.roomy)
+            .padding(.top, theme.spacing.roomy)
+
+            if model.state.projects.isEmpty {
+                AnvilEmptyState(
+                    title: "No projects",
+                    message: "Select a project folder to run a workflow.",
+                    systemImage: "folder"
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: theme.spacing.compact) {
+                        ForEach(model.state.projects) { project in
+                            ProjectRow(
+                                project: project,
+                                isSelected: project.id == model.state.selectedProjectID,
+                                branchName: model.state.branchName(for: project)
+                            ) {
+                                model.selectProject(project)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, theme.spacing.cozy)
+                    .padding(.bottom, theme.spacing.roomy)
+                }
+            }
         }
-      }
+        .background(theme.colors.sidebarBackground)
     }
-    .background(theme.colors.sidebarBackground)
-  }
 }
 
 private struct ProjectRow: View {
-  let project: WorkflowProject
-  let isSelected: Bool
-  let branchName: String?
-  let select: () -> Void
+    let project: WorkflowProject
+    let isSelected: Bool
+    let branchName: String?
+    let select: () -> Void
 
-  var body: some View {
-    AnvilSidebarRow(
-      title: project.name,
-      subtitle: branchName.map { "$\($0)" } ?? "No branch",
-      systemImage: "folder",
-      isSelected: isSelected,
-      action: select
-    )
-  }
+    var body: some View {
+        AnvilSidebarRow(
+            title: project.name,
+            subtitle: branchName.map { "$\($0)" } ?? "No branch",
+            systemImage: "folder",
+            isSelected: isSelected,
+            action: select
+        )
+    }
 }
 
 private struct WorkflowDetail: View {
-  @ObservedObject var model: WorkflowRunnerModel
-  @State private var planningPresentationStyle: PlanningPresentationStyle = .editorPrimary
-  @Environment(\.anvilTheme) private var theme
+    @ObservedObject var model: WorkflowRunnerModel
+    @State private var planningPresentationStyle: PlanningPresentationStyle = .editorPrimary
+    @Environment(\.anvilTheme) private var theme
 
-  var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      header
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
 
-      Divider()
+            Divider()
 
-      if let project = model.state.selectedProject {
-        selectedProjectContent(project)
-      } else {
-        AnvilEmptyState(
-          title: "Select a project",
-          message: "Choose a folder from the sidebar to run a workflow.",
-          systemImage: "folder"
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-      }
-    }
-  }
-
-  private var header: some View {
-    HStack(spacing: theme.spacing.cozy) {
-      VStack(alignment: .leading, spacing: theme.spacing.squishy) {
-        Text(model.state.selectedProject?.name ?? "Workflow Runner")
-          .font(theme.typography.pageTitle)
-          .foregroundStyle(theme.colors.textPrimary)
-
-        Text(
-          model.state.selectedProject?.path
-            ?? "Run headless workflows against a local project folder."
-        )
-        .font(theme.typography.caption)
-        .foregroundStyle(theme.colors.textSecondary)
-        .lineLimit(1)
-      }
-
-      Spacer()
-
-      Button {
-        model.selectProjectFolder()
-      } label: {
-        Label("Open Folder", systemImage: "folder.badge.plus")
-      }
-      .buttonStyle(.bordered)
-    }
-    .padding(.horizontal, theme.spacing.roomy)
-    .padding(.vertical, theme.spacing.comfortable)
-  }
-
-  private func selectedProjectContent(_ project: WorkflowProject) -> some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
-        projectBranchSurface(project)
-        if model.state.planningInteraction != nil {
-          planningStylePicker
-          planningInteraction
-          workflowsSection
-        } else {
-          workflowsSection
+            if let project = model.state.selectedProject {
+                selectedProjectContent(project)
+            } else {
+                AnvilEmptyState(
+                    title: "Select a project",
+                    message: "Choose a folder from the sidebar to run a workflow.",
+                    systemImage: "folder"
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
-        workflowRunOutput
-      }
-      .frame(maxWidth: .infinity, alignment: .topLeading)
-      .padding(theme.spacing.roomy)
     }
-    .accessibilityIdentifier("workflow.contentScroll")
-  }
 
-  private func projectBranchSurface(_ project: WorkflowProject) -> some View {
-    AnvilSurface {
-      HStack(spacing: theme.spacing.cozy) {
-        AnvilIconTile(systemName: "point.3.connected.trianglepath.dotted")
-        AnvilStatusPill(model.state.branchName(for: project) ?? "No git branch detected")
-        Spacer()
-        AnvilIconButton(
-          systemName: "arrow.clockwise",
-          accessibilityLabel: "Refresh",
-          help: "Refresh branch"
-        ) {
-          model.refreshSelectedProject()
+    private var header: some View {
+        HStack(spacing: theme.spacing.cozy) {
+            VStack(alignment: .leading, spacing: theme.spacing.squishy) {
+                Text(model.state.selectedProject?.name ?? "Workflow Runner")
+                    .font(theme.typography.pageTitle)
+                    .foregroundStyle(theme.colors.textPrimary)
+
+                Text(
+                    model.state.selectedProject?.path
+                        ?? "Run headless workflows against a local project folder."
+                )
+                .font(theme.typography.caption)
+                .foregroundStyle(theme.colors.textSecondary)
+                .lineLimit(1)
+            }
+
+            Spacer()
+
+            Button {
+                model.selectProjectFolder()
+            } label: {
+                Label("Open Folder", systemImage: "folder.badge.plus")
+            }
+            .buttonStyle(.bordered)
         }
-      }
+        .padding(.horizontal, theme.spacing.roomy)
+        .padding(.vertical, theme.spacing.comfortable)
     }
-  }
 
-  private var workflowsSection: some View {
-    AnvilPanelSection(title: "Workflows") {
-      VStack(alignment: .leading, spacing: theme.spacing.cozy) {
-        workflowRows
-        workflowStatusBanner
-      }
+    private func selectedProjectContent(_ project: WorkflowProject) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
+                projectBranchSurface(project)
+                if model.state.planningInteraction != nil {
+                    planningStylePicker
+                    planningInteraction
+                    workflowsSection
+                } else {
+                    workflowsSection
+                }
+                workflowRunOutput
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(theme.spacing.roomy)
+        }
+        .accessibilityIdentifier("workflow.contentScroll")
     }
-  }
 
-  private var workflowRows: some View {
-    ForEach(model.state.workflows) { workflow in
-      WorkflowRow(
-        workflow: workflow,
-        isExpanded: model.state.isWorkflowExpanded(workflow),
-        isRunning: model.state.isRunning,
-        isActive: model.state.activeWorkflowID == workflow.id,
-        lastRunSucceeded: model.state.lastRunWorkflowID == workflow.id
-          ? model.state.lastRunSucceeded : nil,
-        implementationPlanPath: Binding(
-          get: { model.state.implementationPlanPath },
-          set: { model.updateImplementationPlanPath($0) }
-        ),
-        implementationBuildCommand: Binding(
-          get: { model.state.implementationBuildCommand },
-          set: { model.updateImplementationBuildCommand($0) }
-        ),
-        externalInputValues: model.state.externalWorkflowInputValues[workflow.id] ?? [:],
-        updateExternalInput: { inputID, value in
-          model.updateExternalWorkflowInput(workflowID: workflow.id, inputID: inputID, value: value)
-        },
-        toggleExpansion: { model.toggleWorkflowExpansion(workflow) },
-        run: { model.runWorkflow(workflow) }
-      )
+    private func projectBranchSurface(_ project: WorkflowProject) -> some View {
+        AnvilSurface {
+            HStack(spacing: theme.spacing.cozy) {
+                AnvilIconTile(systemName: "point.3.connected.trianglepath.dotted")
+                AnvilStatusPill(model.state.branchName(for: project) ?? "No git branch detected")
+                Spacer()
+                AnvilIconButton(
+                    systemName: "arrow.clockwise",
+                    accessibilityLabel: "Refresh",
+                    help: "Refresh branch"
+                ) {
+                    model.refreshSelectedProject()
+                }
+            }
+        }
     }
-  }
 
-  @ViewBuilder
-  private var workflowStatusBanner: some View {
-    if shouldShowStatusBanner, let statusMessage = model.state.statusMessage {
-      AnvilBanner(
-        message: statusMessage,
-        tone: model.state.lastRunSucceeded == false ? .danger : .neutral
-      )
+    private var workflowsSection: some View {
+        AnvilPanelSection(title: "Workflows") {
+            VStack(alignment: .leading, spacing: theme.spacing.cozy) {
+                workflowRows
+                workflowStatusBanner
+            }
+        }
     }
-  }
 
-  @ViewBuilder
-  private var planningInteraction: some View {
-    if let planningInteraction = model.state.planningInteraction {
-      PlanningInteractionView(
-        state: planningInteraction,
-        presentationStyle: planningPresentationStyle.interactionStyle,
-        action: PlanningInteractionActionProcessor(model: model).handle
-      )
+    private var workflowRows: some View {
+        ForEach(model.state.workflows) { workflow in
+            WorkflowRow(
+                workflow: workflow,
+                isExpanded: model.state.isWorkflowExpanded(workflow),
+                isRunning: model.state.isRunning,
+                isActive: model.state.activeWorkflowID == workflow.id,
+                lastRunSucceeded: model.state.lastRunWorkflowID == workflow.id
+                    ? model.state.lastRunSucceeded : nil,
+                implementationPlanPath: Binding(
+                    get: { model.state.implementationPlanPath },
+                    set: { model.updateImplementationPlanPath($0) }
+                ),
+                implementationBuildCommand: Binding(
+                    get: { model.state.implementationBuildCommand },
+                    set: { model.updateImplementationBuildCommand($0) }
+                ),
+                externalInputValues: model.state.externalWorkflowInputValues[workflow.id] ?? [:],
+                updateExternalInput: { inputID, value in
+                    model.updateExternalWorkflowInput(workflowID: workflow.id, inputID: inputID, value: value)
+                },
+                toggleExpansion: { model.toggleWorkflowExpansion(workflow) },
+                run: { model.runWorkflow(workflow) }
+            )
+        }
     }
-  }
 
-  private var planningStylePicker: some View {
-    Picker("Planning layout", selection: $planningPresentationStyle) {
-      ForEach(PlanningPresentationStyle.allCases) { style in
-        Text(style.title).tag(style)
-      }
+    @ViewBuilder
+    private var workflowStatusBanner: some View {
+        if shouldShowStatusBanner, let statusMessage = model.state.statusMessage {
+            AnvilBanner(
+                message: statusMessage,
+                tone: model.state.lastRunSucceeded == false ? .danger : .neutral
+            )
+        }
     }
-    .pickerStyle(.segmented)
-    .frame(width: 340)
-    .accessibilityIdentifier("planning.layoutPicker")
-  }
 
-  @ViewBuilder
-  private var workflowRunOutput: some View {
-    if !model.state.timelineOutput.isEmpty || !model.state.output.isEmpty {
-      WorkflowRunOutput(
-        timeline: model.state.timelineOutput,
-        stepRecords: model.state.stepRecords,
-        fullLog: model.state.output,
-        debugLogURL: model.state.debugLogURL
-      )
+    @ViewBuilder
+    private var planningInteraction: some View {
+        if let planningInteraction = model.state.planningInteraction {
+            PlanningInteractionView(
+                state: planningInteraction,
+                presentationStyle: planningPresentationStyle.interactionStyle,
+                action: PlanningInteractionActionProcessor(model: model).handle
+            )
+        }
     }
-  }
 
-  private var shouldShowStatusBanner: Bool {
-    !model.state.statusMessage.isNilOrEmpty && !model.state.isRunning
-  }
+    private var planningStylePicker: some View {
+        Picker("Planning layout", selection: $planningPresentationStyle) {
+            ForEach(PlanningPresentationStyle.allCases) { style in
+                Text(style.title).tag(style)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 340)
+        .accessibilityIdentifier("planning.layoutPicker")
+    }
+
+    @ViewBuilder
+    private var workflowRunOutput: some View {
+        if !model.state.timelineOutput.isEmpty || !model.state.output.isEmpty {
+            WorkflowRunOutput(
+                timeline: model.state.timelineOutput,
+                stepRecords: model.state.stepRecords,
+                fullLog: model.state.output,
+                debugLogURL: model.state.debugLogURL
+            )
+        }
+    }
+
+    private var shouldShowStatusBanner: Bool {
+        !model.state.statusMessage.isNilOrEmpty && !model.state.isRunning
+    }
 }
 
 private enum PlanningPresentationStyle: String, CaseIterable, Identifiable {
-  case editorPrimary
-  case inline
+    case editorPrimary
+    case inline
 
-  var id: String { rawValue }
+    var id: String { rawValue }
 
-  var title: String {
-    switch self {
-    case .editorPrimary:
-      return "Editor"
-    case .inline:
-      return "Split"
+    var title: String {
+        switch self {
+        case .editorPrimary:
+            return "Editor"
+        case .inline:
+            return "Split"
+        }
     }
-  }
 
-  var interactionStyle: PlanningInteractionView.PresentationStyle {
-    switch self {
-    case .editorPrimary:
-      return .editorPrimary
-    case .inline:
-      return .inline
+    var interactionStyle: PlanningInteractionView.PresentationStyle {
+        switch self {
+        case .editorPrimary:
+            return .editorPrimary
+        case .inline:
+            return .inline
+        }
     }
-  }
 }
 
 extension Optional where Wrapped == String {
-  fileprivate var isNilOrEmpty: Bool {
-    self?.isEmpty ?? true
-  }
+    fileprivate var isNilOrEmpty: Bool {
+        self?.isEmpty ?? true
+    }
 }

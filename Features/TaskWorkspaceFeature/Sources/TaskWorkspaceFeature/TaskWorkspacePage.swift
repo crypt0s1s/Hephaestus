@@ -184,7 +184,7 @@ public struct TaskWorkspacePage: View {
                 }
                 .accessibilityLabel("Message")
                 .accessibilityIdentifier(TaskWorkspaceAccessibilityID.messageInput)
-            }
+        }
     }
 
     private var sendButton: some View {

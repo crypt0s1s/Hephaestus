@@ -130,15 +130,17 @@ public struct TaskSummaryState: Equatable, Identifiable, Sendable {
         self.title = title
         self.updatedAt = updatedAt
         self.messageCount = messageCount
-        self.task = task ?? AgentTask(
-            id: TaskID(rawValue: id),
-            projectID: DefaultProject.id,
-            title: title,
-            status: messageCount == 0 ? .draft : .completed,
-            createdAt: updatedAt,
-            updatedAt: updatedAt,
-            activeRunID: id
-        )
+        self.task =
+            task
+            ?? AgentTask(
+                id: TaskID(rawValue: id),
+                projectID: DefaultProject.id,
+                title: title,
+                status: messageCount == 0 ? .draft : .completed,
+                createdAt: updatedAt,
+                updatedAt: updatedAt,
+                activeRunID: id
+            )
     }
 }
 

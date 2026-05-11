@@ -36,8 +36,8 @@ public final class Router<Route: Hashable, Modal: Identifiable>: ObservableObjec
     }
 }
 
-public extension Router where Route == AnyRouteInput, Modal == AnyModalInput {
-    func apply(_ intent: NavigationIntent) {
+extension Router where Route == AnyRouteInput, Modal == AnyModalInput {
+    public func apply(_ intent: NavigationIntent) {
         switch intent {
         case .push(let route):
             push(route)
