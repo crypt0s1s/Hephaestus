@@ -59,6 +59,9 @@ disabled_rules:
   - type_body_length
 
 opt_in_rules:
+  - contains_over_filter_count
+  - contains_over_filter_is_empty
+  - contains_over_first_not_nil
   - empty_count
   - empty_string
   - empty_xctest_method
@@ -69,4 +72,5 @@ opt_in_rules:
   - private_swiftui_state
   - redundant_nil_coalescing
   - sorted_first_last
+  - unhandled_throwing_task
   - yoda_condition
