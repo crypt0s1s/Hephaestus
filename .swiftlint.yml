@@ -53,7 +53,6 @@ disabled_rules:
   - function_parameter_count
   - identifier_name
   - large_tuple
-  - static_over_final_class
   - trailing_comma
   - type_name
   - type_body_length
@@ -66,7 +65,6 @@ opt_in_rules:
   - empty_string
   - empty_xctest_method
   - fatal_error_message
-  - final_test_case
   - first_where
   - indentation_width
   - private_swiftui_state

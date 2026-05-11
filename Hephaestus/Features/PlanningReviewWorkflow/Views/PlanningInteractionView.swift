@@ -164,13 +164,23 @@ private struct PlanningInteractionContent: View {
     var body: some View {
         switch presentationStyle {
         case .editorPrimary:
-            HStack(alignment: .top, spacing: theme.spacing.comfortable) {
-                PlanningInteractionDraftEditor(state: state, action: action)
-                    .frame(minWidth: 520, maxWidth: .infinity, minHeight: 440)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: theme.spacing.comfortable) {
+                    PlanningInteractionDraftEditor(state: state, action: action)
+                        .frame(minWidth: 520, maxWidth: .infinity, minHeight: 440)
 
-                PlanningInteractionNotes(state: state, action: action)
-                    .frame(width: 360)
-                    .frame(minHeight: 440)
+                    PlanningInteractionNotes(state: state, action: action)
+                        .frame(width: 360)
+                        .frame(minHeight: 440)
+                }
+
+                VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
+                    PlanningInteractionDraftEditor(state: state, action: action)
+                        .frame(maxWidth: .infinity, minHeight: 360)
+
+                    PlanningInteractionNotes(state: state, action: action)
+                        .frame(maxWidth: .infinity, minHeight: 280)
+                }
             }
         case .inline:
             HStack(alignment: .top, spacing: theme.spacing.comfortable) {
@@ -243,6 +253,7 @@ private struct PlanningInteractionNoteComposer: View {
             TextField(state.inputPlaceholder, text: noteBinding, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...3)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, theme.spacing.cozy)
                 .padding(.vertical, theme.spacing.compact)
                 .background(theme.colors.elevatedPanelBackground)
@@ -267,6 +278,7 @@ private struct PlanningInteractionNoteComposer: View {
             .accessibilityLabel("Add interaction note")
             .accessibilityIdentifier("planning.sendButton")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var noteBinding: Binding<String> {

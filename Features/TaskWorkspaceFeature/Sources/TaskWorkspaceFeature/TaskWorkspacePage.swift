@@ -5,16 +5,7 @@ import SwiftUI
 public struct TaskWorkspacePage: View {
     public let state: TaskWorkspaceState
     public let handle: (TaskWorkspaceAction) -> Void
-    @State private var isTranscriptPinnedToBottom = true
     @Environment(\.anvilTheme) private var theme
-
-    private var trimmedDraft: String {
-        state.draftText.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var canSend: Bool {
-        !state.isRunning && !trimmedDraft.isEmpty
-    }
 
     public init(state: TaskWorkspaceState, handle: @escaping (TaskWorkspaceAction) -> Void) {
         self.state = state
@@ -27,13 +18,6 @@ public struct TaskWorkspacePage: View {
             .background(theme.colors.windowBackground)
             .sheet(isPresented: providerSettingsPresented) {
                 ProviderSettingsSheet(state: state.providerSettings, handle: handle)
-            }
-            .popover(
-                isPresented: inspectorPresented,
-                attachmentAnchor: .rect(.bounds),
-                arrowEdge: .top
-            ) {
-                RunInspectorSheet(state: state.inspector)
             }
     }
 
@@ -61,29 +45,34 @@ public struct TaskWorkspacePage: View {
             TaskHeader(
                 isRunning: state.isRunning,
                 runID: state.runID,
+                inspector: state.inspector,
+                inspectorPresented: inspectorPresented,
                 canInspect: state.runID != nil,
                 canCancel: state.isRunning,
                 handle: handle
             )
 
             Divider()
-            transcript
-            Divider()
-            composerPanel
+            chatSurface
         }
     }
 
-    private var composerPanel: some View {
-        VStack(spacing: theme.spacing.cozy) {
-            if let errorMessage = state.errorMessage {
-                ErrorBanner(message: errorMessage)
+    private var chatSurface: some View {
+        ChatSurface(
+            state: ChatSurfaceState(
+                messages: state.messages,
+                draftText: state.draftText,
+                isRunning: state.isRunning,
+                errorMessage: state.errorMessage
+            )
+        ) { chatAction in
+            switch chatAction {
+            case .changeDraft(let text):
+                handle(.changeDraft(text))
+            case .tapSend:
+                handle(.tapSend)
             }
-
-            composer
         }
-        .padding(.horizontal, theme.spacing.comfortable)
-        .padding(.vertical, theme.spacing.cozy)
-        .background(theme.colors.panelBackground)
     }
 
     private var providerSettingsPresented: Binding<Bool> {
@@ -100,115 +89,6 @@ public struct TaskWorkspacePage: View {
         )
     }
 
-    private var transcript: some View {
-        ScrollViewReader { proxy in
-            GeometryReader { viewport in
-                transcriptScrollView(proxy: proxy, viewport: viewport)
-            }
-        }
-    }
-
-    private func transcriptScrollView(proxy: ScrollViewProxy, viewport: GeometryProxy) -> some View {
-        ScrollView {
-            transcriptMessages(viewport: viewport)
-                .padding(.horizontal, theme.spacing.roomy)
-                .padding(.vertical, theme.spacing.comfortable)
-        }
-        .coordinateSpace(name: ConversationScrollTarget.coordinateSpace)
-        .accessibilityLabel("Conversation transcript")
-        .accessibilityIdentifier(TaskWorkspaceAccessibilityID.transcript)
-        .onPreferenceChange(ConversationBottomDistancePreferenceKey.self) { distanceFromBottom in
-            isTranscriptPinnedToBottom = distanceFromBottom <= ConversationScrollTarget.pinnedThreshold
-        }
-        .onChange(of: state.messages, initial: true) {
-            scrollToBottomIfPinned(proxy)
-        }
-        .onChange(of: state.isRunning, initial: false) {
-            scrollToBottomIfPinned(proxy)
-        }
-    }
-
-    private func transcriptMessages(viewport: GeometryProxy) -> some View {
-        LazyVStack(spacing: theme.spacing.comfortable) {
-            if state.messages.isEmpty {
-                EmptyTaskState()
-                    .padding(.top, theme.spacing.spacious + theme.spacing.spacious + theme.spacing.squishy)
-            } else {
-                ForEach(state.messages) { message in
-                    MessageBubble(message: message)
-                }
-            }
-
-            if state.isRunning {
-                RunningStatus()
-            }
-
-            bottomScrollMarker(viewport: viewport)
-        }
-    }
-
-    private func bottomScrollMarker(viewport: GeometryProxy) -> some View {
-        Color.clear
-            .frame(height: 1)
-            .id(ConversationScrollTarget.bottom)
-            .background {
-                GeometryReader { bottomMarker in
-                    Color.clear.preference(
-                        key: ConversationBottomDistancePreferenceKey.self,
-                        value: bottomMarker.frame(in: .named(ConversationScrollTarget.coordinateSpace)).maxY
-                            - viewport.size.height
-                    )
-                }
-            }
-    }
-
-    private func scrollToBottomIfPinned(_ proxy: ScrollViewProxy) {
-        guard isTranscriptPinnedToBottom else { return }
-        proxy.scrollTo(ConversationScrollTarget.bottom, anchor: .bottom)
-    }
-
-    private var composer: some View {
-        HStack(alignment: .center, spacing: theme.spacing.cozy) {
-            messageField
-            sendButton
-        }
-    }
-
-    private var messageField: some View {
-        AnvilSurface(border: .separator) {
-            TextField("Add task instruction", text: draftTextBinding, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...4)
-                .onSubmit {
-                    handle(.tapSend)
-                }
-                .accessibilityLabel("Message")
-                .accessibilityIdentifier(TaskWorkspaceAccessibilityID.messageInput)
-        }
-    }
-
-    private var sendButton: some View {
-        Button {
-            handle(.tapSend)
-        } label: {
-            Label("Send", systemImage: "paperplane.fill")
-                .labelStyle(.iconOnly)
-                .frame(width: 34, height: 34)
-        }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .disabled(!canSend)
-        .help("Send message")
-        .accessibilityLabel("Send message")
-        .accessibilityIdentifier(TaskWorkspaceAccessibilityID.sendButton)
-    }
-
-    private var draftTextBinding: Binding<String> {
-        Binding(
-            get: { state.draftText },
-            set: { handle(.changeDraft($0)) }
-        )
-    }
 }
 
 struct ConversationBottomDistancePreferenceKey: PreferenceKey {

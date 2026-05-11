@@ -2,11 +2,14 @@ import AnvilTheme
 import AnvilUI
 import SwiftUI
 
-struct EmptyTaskState: View {
+struct ChatEmptyState: View {
+    let title: String
+    let message: String
+
     var body: some View {
         AnvilEmptyState(
-            title: "Start a focused task",
-            message: "Describe the task, then inspect the run as it moves through the workspace.",
+            title: title,
+            message: message,
             systemImage: "sparkles"
         )
         .accessibilityIdentifier(TaskWorkspaceAccessibilityID.emptyState)
@@ -14,16 +17,18 @@ struct EmptyTaskState: View {
 }
 
 struct RunningStatus: View {
+    let text: String
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
         HStack(spacing: theme.spacing.compact) {
             ProgressView()
                 .controlSize(.small)
-            AnvilStatusText("Foundry is running")
+            AnvilStatusText(text)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, theme.spacing.compact)
+        .padding(.horizontal, theme.spacing.compact)
+        .padding(.vertical, theme.spacing.squishy)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(TaskWorkspaceAccessibilityID.runningStatus)
     }
@@ -68,16 +73,19 @@ struct MessageBubble: View {
     }
 
     private var bubble: some View {
-        AnvilSurface(
-            fill: isUser ? .selection : .elevated,
-            border: isUser ? .accent : .separator
-        ) {
-            VStack(alignment: .leading, spacing: theme.spacing.compact) {
-                bubbleHeader
-                messageText
-            }
+        VStack(alignment: .leading, spacing: theme.spacing.compact) {
+            bubbleHeader
+            messageText
         }
-        .frame(maxWidth: 520, alignment: .leading)
+        .padding(.horizontal, theme.spacing.comfortable)
+        .padding(.vertical, theme.spacing.cozy)
+        .background(bubbleBackground)
+        .clipShape(RoundedRectangle(cornerRadius: isUser ? 18 : 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: isUser ? 18 : 10, style: .continuous)
+                .stroke(bubbleBorder, lineWidth: 1)
+        }
+        .frame(maxWidth: isUser ? 520 : 680, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(senderName): \(message.text)")
     }
@@ -118,6 +126,14 @@ struct MessageBubble: View {
 
     private var senderName: String {
         isUser ? "You" : "Assistant"
+    }
+
+    private var bubbleBackground: Color {
+        isUser ? theme.colors.elevatedPanelBackground : theme.colors.panelBackground
+    }
+
+    private var bubbleBorder: Color {
+        isUser ? theme.colors.separator : theme.colors.border
     }
 
 }

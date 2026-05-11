@@ -12,7 +12,7 @@ final class HephaestusUITestsLaunchTests: XCTestCase {
         app.launchEnvironment["HEPHAESTUS_PROVIDER"] = "mock"
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["Workflows"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Workflows"].waitForExistence(timeout: 5))
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Launch Screen"

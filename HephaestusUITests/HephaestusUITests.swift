@@ -128,21 +128,7 @@ final class HephaestusUITests: XCTestCase {
     @MainActor
     func testPlanningReviewWorkflowSubmitsInteractivePlan() throws {
         let app = XCUIApplication()
-        let repoURL = try repositoryRootURL()
-
-        app.launchEnvironment["HEPHAESTUS_PROVIDER"] = "mock"
-        app.launchEnvironment["HEPHAESTUS_WORKFLOW_PROJECT_PATH"] = repoURL.path
-        app.launch()
-        selectWorkflowsMode(in: app)
-
-        let runButton = workflowRunButton(
-            in: app,
-            id: "planning-review",
-            title: "Planning Review Workflow"
-        )
-        XCTAssertTrue(runButton.waitForExistence(timeout: 10))
-        XCTAssertTrue(waitForEnabled(runButton, timeout: 10))
-        clickWorkflowRunButton(runButton)
+        try launchPlanningReviewWorkflow(in: app)
 
         XCTAssertTrue(app.staticTexts["Interactive planning"].waitForExistence(timeout: 10))
         XCTAssertTrue(
@@ -157,10 +143,13 @@ final class HephaestusUITests: XCTestCase {
 
         let draftPlan = planningDraftPlan(in: app)
         XCTAssertTrue(draftPlan.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["planning.requiresUserEdit"].waitForExistence(timeout: 10))
+        scrollToPlanningDraft(in: app)
+        XCTAssertTrue(draftPlan.isHittable)
+        draftPlan.click()
+        draftPlan.typeText("\nReviewed in the UI test.")
 
-        let submitButton = app.buttons["planning.submitPlan"]
-        XCTAssertTrue(waitForEnabled(submitButton, timeout: 20))
-        submitButton.click()
+        submitInteractivePlan(in: app)
 
         XCTAssertTrue(app.buttons["planning.acceptPlan"].waitForExistence(timeout: 60))
         XCTAssertTrue(app.buttons["planning.anotherCycle"].waitForExistence(timeout: 10))
@@ -225,6 +214,18 @@ final class HephaestusUITests: XCTestCase {
         }
     }
 
+    private func scrollToPlanningDraft(in app: XCUIApplication) {
+        let draft = planningDraftPlan(in: app)
+        let workflowScroll = app.scrollViews["workflow.contentScroll"]
+        for _ in 0..<8 where !draft.isHittable {
+            if workflowScroll.exists {
+                workflowScroll.swipeDown()
+            } else {
+                app.scrollViews.firstMatch.swipeDown()
+            }
+        }
+    }
+
     private func selectTasksMode(in app: XCUIApplication) {
         let tasksButton = app.buttons["Tasks"]
         if tasksButton.waitForExistence(timeout: 5) {
@@ -263,6 +264,30 @@ final class HephaestusUITests: XCTestCase {
 
     private func clickWorkflowRunButton(_ button: XCUIElement) {
         button.click()
+    }
+
+    private func launchPlanningReviewWorkflow(in app: XCUIApplication) throws {
+        let repoURL = try repositoryRootURL()
+
+        app.launchEnvironment["HEPHAESTUS_PROVIDER"] = "mock"
+        app.launchEnvironment["HEPHAESTUS_WORKFLOW_PROJECT_PATH"] = repoURL.path
+        app.launch()
+        selectWorkflowsMode(in: app)
+
+        let runButton = workflowRunButton(
+            in: app,
+            id: "planning-review",
+            title: "Planning Review Workflow"
+        )
+        XCTAssertTrue(runButton.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForEnabled(runButton, timeout: 10))
+        clickWorkflowRunButton(runButton)
+    }
+
+    private func submitInteractivePlan(in app: XCUIApplication) {
+        let submitButton = app.buttons["planning.submitPlan"]
+        XCTAssertTrue(waitForEnabled(submitButton, timeout: 20))
+        submitButton.click()
     }
 
     private func repositoryRootURL() throws -> URL {

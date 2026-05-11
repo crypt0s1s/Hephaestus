@@ -5,6 +5,8 @@ import SwiftUI
 struct TaskHeader: View {
     let isRunning: Bool
     let runID: UUID?
+    let inspector: RunInspectorPanelState
+    let inspectorPresented: Binding<Bool>
     let canInspect: Bool
     let canCancel: Bool
     let handle: (TaskWorkspaceAction) -> Void
@@ -48,6 +50,13 @@ struct TaskHeader: View {
             handle(.tapInspector)
         }
         .disabled(!canInspect)
+        .popover(
+            isPresented: inspectorPresented,
+            attachmentAnchor: .rect(.bounds),
+            arrowEdge: .top
+        ) {
+            RunInspectorSheet(state: inspector)
+        }
         .accessibilityIdentifier(TaskWorkspaceAccessibilityID.inspectorButton)
     }
 
