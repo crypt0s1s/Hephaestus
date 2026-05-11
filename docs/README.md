@@ -23,6 +23,7 @@ This folder captures the current direction for Hephaestus as an agent system.
 - [Interactive Workflow Step Spike](./plans/0010-interactive-workflow-step-spike.md): spike plan for interactive workflow pause/resume, runtime-owned workflow messages, and planning-review workflow handoffs.
 - [Interactive Planning Review Manual UI Checklist](./plans/0011-interactive-planning-review-manual-ui-checklist.md): manual acceptance checklist for PRD-0011 interactive planning workflow UI flows.
 - [Interactive Workflow Model Refinement](./plans/0012-interactive-workflow-model-refinement.md): sub-agent review summary and implementation direction for Codex-backed interactive planning, artifact materialization, and review cycles.
+- [Visual Workflow Builder Technical Design](./plans/0013-visual-workflow-builder-technical-design.md): technical design for PRD-0012 workflow definition modeling, loops, actor/tool configuration, validation, storage, and builder UI architecture.
 
 ## Documentation Routing
 
@@ -41,6 +42,7 @@ This folder captures the current direction for Hephaestus as an agent system.
 - [0007. Headless Runtime Entrypoint](./adr/0007-headless-runtime-entrypoint.md): defines headless support so the runtime can be exercised from a CLI or tests without requiring the SwiftUI app.
 - [0008. Local App State Storage](./adr/0008-local-app-state-storage.md): defines the first durable storage boundary for provider settings, chat history, context traces, and run inspection summaries.
 - [0012. External Swift Workflow Packages](./adr/0012-external-swift-workflow-packages.md): defines the proposed out-of-process Swift package model for user-authored workflows.
+- [0013. Visual Workflow Definition And Runtime Boundary](./adr/0013-visual-workflow-definition-and-runtime-boundary.md): defines visual workflow definitions as durable graph data separate from canvas state, runtime state, and backend launch details.
 
 ## Current Direction
 

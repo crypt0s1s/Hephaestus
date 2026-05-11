@@ -97,6 +97,7 @@ private struct ProjectRow: View {
 
 private struct WorkflowDetail: View {
     @ObservedObject var model: WorkflowRunnerModel
+    @StateObject private var workflowBuilderModel = WorkflowBuilderModel()
     @State private var planningPresentationStyle: PlanningPresentationStyle = .editorPrimary
     @Environment(\.anvilTheme) private var theme
 
@@ -152,6 +153,7 @@ private struct WorkflowDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
                 projectBranchSurface(project)
+                WorkflowBuilderView(project: project, model: workflowBuilderModel)
                 if model.state.planningInteraction != nil {
                     planningStylePicker
                     planningInteraction

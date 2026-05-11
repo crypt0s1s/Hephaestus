@@ -27,3 +27,4 @@ PRDs are separate from ADRs and implementation plans:
 - [PRD-0009. Meta-Harness Foundation](./0009-meta-harness-foundation.md)
 - [PRD-0010. Nested Workflow Cycle Timeline](./0010-nested-workflow-cycle-timeline.md)
 - [PRD-0011. Interactive Planning Review Workflow](./0011-interactive-planning-review-workflow.md)
+- [PRD-0012. Visual Workflow Builder](./0012-visual-workflow-builder.md)

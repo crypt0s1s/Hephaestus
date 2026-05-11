@@ -30,7 +30,7 @@ Hephaestus needs a path toward user-authored workflows and reusable workflow com
 
 ### Non-Goals
 
-- Build a full visual workflow editor now.
+- Replace the durable visual workflow definition model accepted in [ADR-0013](0013-visual-workflow-definition-and-runtime-boundary.md).
 - Build a package marketplace, dependency resolver, signing model, or trust system now.
 - Support arbitrary YAML/JSON workflow authoring for complex control flow in this slice.
 - Hot-load Swift modules into the running app process.
