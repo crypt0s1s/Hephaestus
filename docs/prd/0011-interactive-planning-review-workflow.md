@@ -4,7 +4,7 @@
 **Date:** 2026-05-07
 **Owner:** Hephaestus engineering
 **Related ADRs:** TBD
-**Related Plans:** [Interactive Workflow Step Spike](../plans/0010-interactive-workflow-step-spike.md)
+**Related Plans:** [Interactive Workflow Step Spike](../plans/0010-interactive-workflow-step-spike.md), [Interactive Step Review Gates And Exit Policy](../plans/0013-interactive-step-review-gates-and-exit-policy.md)
 
 ---
 
@@ -403,7 +403,7 @@ PRDs define product need and product constraints. ADRs record durable architectu
 | --- | --- |
 | Separate technical design required? | Yes |
 | Rationale | The workflow exists to explore interactive pause/resume, runtime-owned cross-session message passing, planner continuity, reviewer fan-out, optional message persistence/export, and the path toward typed workflow step IO. |
-| Plan link | TBD |
+| Plan link | [Interactive Step Review Gates And Exit Policy](../plans/0013-interactive-step-review-gates-and-exit-policy.md) |
 | Blocks implementation until resolved? | Yes |
 | Owner | Hephaestus engineering |
 
