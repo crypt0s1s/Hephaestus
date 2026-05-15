@@ -167,7 +167,8 @@ final class HephaestusUITests: XCTestCase {
         XCTAssertTrue(
             app.staticTexts["Interactive user review"]
                 .waitForExistence(timeout: 10))
-        app.buttons["planning.acceptPlan"].click()
+        assertPlanningReviewHandoffSummary(in: app)
+        tapPlanningAccept(in: app)
         XCTAssertTrue(
             app.staticTexts["Planning review workflow accepted."]
                 .waitForExistence(timeout: 10))
@@ -218,6 +219,29 @@ final class HephaestusUITests: XCTestCase {
         XCTAssertTrue(draftPlan.waitForExistence(timeout: 10))
         draftPlan.click()
         app.typeText("\n\nReviewed by the UI test.")
+    }
+
+    private func assertPlanningReviewHandoffSummary(in app: XCUIApplication) {
+        XCTAssertTrue(
+            app.descendants(matching: .any)["planning.reviewSummary"]
+                .waitForExistence(timeout: 10)
+        )
+    }
+
+    private func tapPlanningAccept(in app: XCUIApplication) {
+        let acceptButton = app.buttons["planning.acceptPlan"]
+        if !acceptButton.exists {
+            let workflowScroll = app.scrollViews["workflow.contentScroll"]
+            for _ in 0..<6 where !acceptButton.exists {
+                if workflowScroll.exists {
+                    workflowScroll.swipeDown()
+                } else {
+                    app.scrollViews.firstMatch.swipeDown()
+                }
+            }
+        }
+        XCTAssertTrue(acceptButton.waitForExistence(timeout: 10))
+        acceptButton.click()
     }
 
     private func scrollToPlanningInteraction(in app: XCUIApplication) {
