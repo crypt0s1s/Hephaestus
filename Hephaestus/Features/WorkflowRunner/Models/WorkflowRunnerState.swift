@@ -30,6 +30,10 @@ struct WorkflowRunnerState: Equatable {
     var lastRunWorkflowID: WorkflowDefinition.ID?
     var planningInteraction: PlanningInteractionState?
 
+    var interactiveActivity: WorkflowInteractiveActivity? {
+        planningInteraction?.interactiveActivityProjection
+    }
+
     var selectedProject: WorkflowProject? {
         guard let selectedProjectID else { return nil }
         return projects.first { $0.id == selectedProjectID }
