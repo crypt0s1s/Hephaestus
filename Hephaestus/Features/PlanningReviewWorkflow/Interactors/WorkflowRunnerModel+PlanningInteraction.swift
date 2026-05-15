@@ -149,6 +149,12 @@ extension WorkflowRunnerModel {
         }
     }
 
+    func notePlanningReviewArtifactPathCopied(_ path: String) {
+        update {
+            $0.statusMessage = "Copied review artifact path: \(path)"
+        }
+    }
+
     func requestAnotherPlanningReviewCycle() async {
         guard let project = state.selectedProject,
             let interaction = state.planningInteraction,

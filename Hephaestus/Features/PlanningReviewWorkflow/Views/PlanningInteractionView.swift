@@ -27,7 +27,7 @@ struct PlanningInteractionView: View {
         VStack(alignment: .leading, spacing: theme.spacing.cozy) {
             PlanningInteractionHeader(state: state, action: action)
             PlanningInteractionContent(state: state, presentationStyle: presentationStyle, action: action)
-            PlanningInteractionReviewSummary(state: state)
+            PlanningInteractionReviewSummary(state: state, action: action)
             PlanningInteractionDecisionBar(state: state, action: action)
         }
         .padding(theme.spacing.comfortable)

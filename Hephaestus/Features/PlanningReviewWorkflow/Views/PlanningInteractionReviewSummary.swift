@@ -4,6 +4,7 @@ import SwiftUI
 
 struct PlanningInteractionReviewSummary: View {
     let state: PlanningInteractionState
+    let action: (PlanningInteractionActionProcessor.Action) -> Void
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
@@ -32,11 +33,12 @@ struct PlanningInteractionReviewSummary: View {
                             title: latestTitle,
                             badge: latestBadge,
                             output: latestOutput,
-                            identifier: "planning.latestReviewedPlan"
+                            identifier: "planning.latestReviewedPlan",
+                            action: action
                         )
                     }
 
-                    PlanningInteractionReviewCycleList(cycles: cycles)
+                    PlanningInteractionReviewCycleList(cycles: cycles, action: action)
                 }
             }
         }
@@ -103,6 +105,7 @@ private struct PlanningInteractionReviewSummaryHeader: View {
 
 private struct PlanningInteractionReviewCycleList: View {
     let cycles: [PlanningInteractionReviewCycleArtifacts]
+    let action: (PlanningInteractionActionProcessor.Action) -> Void
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
@@ -113,7 +116,7 @@ private struct PlanningInteractionReviewCycleList: View {
                     .foregroundStyle(theme.colors.textPrimary)
 
                 ForEach(cycles) { cycle in
-                    PlanningInteractionReviewCycleSection(cycle: cycle)
+                    PlanningInteractionReviewCycleSection(cycle: cycle, action: action)
                 }
             }
         }
@@ -185,6 +188,7 @@ private struct PlanningInteractionReviewArtifactMarker: Identifiable {
 
 private struct PlanningInteractionReviewCycleSection: View {
     let cycle: PlanningInteractionReviewCycleArtifacts
+    let action: (PlanningInteractionActionProcessor.Action) -> Void
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
@@ -198,7 +202,8 @@ private struct PlanningInteractionReviewCycleSection: View {
                     title: "Review feedback",
                     badge: "Feedback",
                     output: feedback,
-                    identifier: "planning.reviewCycle.\(cycle.number).feedback"
+                    identifier: "planning.reviewCycle.\(cycle.number).feedback",
+                    action: action
                 )
             }
 
@@ -207,7 +212,8 @@ private struct PlanningInteractionReviewCycleSection: View {
                     title: "Planner response plan",
                     badge: "Plan",
                     output: plan,
-                    identifier: "planning.reviewCycle.\(cycle.number).plan"
+                    identifier: "planning.reviewCycle.\(cycle.number).plan",
+                    action: action
                 )
             }
         }
@@ -220,6 +226,7 @@ private struct PlanningInteractionArtifactRow: View {
     let badge: String
     let output: InteractiveStepOutput
     let identifier: String
+    let action: (PlanningInteractionActionProcessor.Action) -> Void
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
@@ -239,6 +246,21 @@ private struct PlanningInteractionArtifactRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous))
 
                 Spacer()
+
+                if let path = output.artifact.projectRelativePath {
+                    AnvilActionButton(
+                        configuration: AnvilActionButtonConfiguration(
+                            title: "Copy path",
+                            systemImage: "doc.on.doc",
+                            style: .plain,
+                            labelStyle: .iconOnly,
+                            accessibilityLabel: "Copy \(title) path",
+                            accessibilityIdentifier: "\(identifier).copyPath",
+                            help: "Copy artifact path"
+                        ),
+                        action: { action(.tapCopyArtifactPath(path)) }
+                    )
+                }
             }
 
             if let summary = output.summary {

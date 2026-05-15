@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 @MainActor
@@ -11,6 +12,7 @@ struct PlanningInteractionActionProcessor {
         case tapRequestAnotherCycle
         case tapContinuePlanning
         case chooseRecovery(InteractiveStepRecoveryAction)
+        case tapCopyArtifactPath(String)
     }
 
     let model: WorkflowRunnerModel
@@ -33,6 +35,14 @@ struct PlanningInteractionActionProcessor {
             model.continuePlanningReview()
         case .chooseRecovery(let recoveryAction):
             model.choosePlanningRecoveryAction(recoveryAction)
+        case .tapCopyArtifactPath(let path):
+            copyArtifactPath(path)
         }
+    }
+
+    private func copyArtifactPath(_ path: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
+        model.notePlanningReviewArtifactPathCopied(path)
     }
 }
