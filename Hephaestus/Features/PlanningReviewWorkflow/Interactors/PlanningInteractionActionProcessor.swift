@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 
 @MainActor
@@ -16,6 +15,22 @@ struct PlanningInteractionActionProcessor {
     }
 
     let model: WorkflowRunnerModel
+    let artifactPathCopier: any PlanningReviewArtifactPathCopying
+
+    init(model: WorkflowRunnerModel) {
+        self.init(
+            model: model,
+            artifactPathCopier: PasteboardPlanningReviewArtifactPathCopier()
+        )
+    }
+
+    init(
+        model: WorkflowRunnerModel,
+        artifactPathCopier: any PlanningReviewArtifactPathCopying
+    ) {
+        self.model = model
+        self.artifactPathCopier = artifactPathCopier
+    }
 
     func handle(_ action: Action) {
         switch action {
@@ -41,8 +56,7 @@ struct PlanningInteractionActionProcessor {
     }
 
     private func copyArtifactPath(_ path: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(path, forType: .string)
+        artifactPathCopier.copyArtifactPath(path)
         model.notePlanningReviewArtifactPathCopied(path)
     }
 }

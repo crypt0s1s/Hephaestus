@@ -1,4 +1,5 @@
 import AnvilTheme
+import AnvilUI
 import SwiftUI
 
 struct PlanningInteractionRecoveryActions: View {
@@ -9,11 +10,16 @@ struct PlanningInteractionRecoveryActions: View {
     var body: some View {
         HStack(spacing: theme.spacing.compact) {
             ForEach(issue.recoveryActions, id: \.self) { recoveryAction in
-                Button(recoveryAction.title) {
-                    action(.chooseRecovery(recoveryAction))
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier(recoveryAction.accessibilityIdentifier)
+                AnvilActionButton(
+                    configuration: AnvilActionButtonConfiguration(
+                        title: recoveryAction.title,
+                        style: .plain,
+                        accessibilityIdentifier: recoveryAction.accessibilityIdentifier
+                    ),
+                    action: {
+                        action(.chooseRecovery(recoveryAction))
+                    }
+                )
             }
         }
         .accessibilityIdentifier("planning.recoveryActions")
