@@ -4,7 +4,7 @@
 **Date:** 2026-05-07
 **Owner:** Hephaestus engineering
 **Related ADRs:** TBD
-**Related Plans:** [Interactive Workflow Step Spike](../plans/0010-interactive-workflow-step-spike.md), [Interactive Step Review Gates And Exit Policy](../plans/0013-interactive-step-review-gates-and-exit-policy.md)
+**Related Plans:** [Interactive Workflow Step Spike](../plans/0010-interactive-workflow-step-spike.md), [Interactive Step Review Gates And Exit Policy](../plans/0013-interactive-step-review-gates-and-exit-policy.md), [Interactive Runner Decoupling Plan](../plans/0014-interactive-runner-decoupling-plan.md)
 
 ---
 
