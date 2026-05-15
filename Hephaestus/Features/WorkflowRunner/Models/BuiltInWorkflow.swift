@@ -3,12 +3,13 @@ import Foundation
 struct BuiltInWorkflowRunContext {
     let project: WorkflowProject
     let inputValues: [String: String]
+    let interactiveSessionStore: WorkflowInteractiveSessionStore
     let progress: WorkflowProgressHandler?
 }
 
 enum BuiltInWorkflowRunResult {
     case completed(ProcessResult)
-    case waiting(WorkflowRunProgress, output: String)
+    case waiting(WorkflowRunProgress, output: String, activity: WorkflowInteractiveActivity)
 }
 
 protocol BuiltInWorkflow {
@@ -28,22 +29,13 @@ struct BuiltInWorkflowCatalog {
         workflows.first { $0.definition.id == id }
     }
 
-    static func production(
-        processRunner: WorkflowProcessRunning = DefaultProcessRunner(),
-        planningReviewServices: PlanningReviewServices? = nil
-    )
+    static func core(processRunner: WorkflowProcessRunning = DefaultProcessRunner())
         -> BuiltInWorkflowCatalog {
         let headlessRunner = HeadlessCodexWorkflowRunner(processRunner: processRunner)
-        let planningReviewServices =
-            planningReviewServices
-            ?? PlanningReviewServices(
-                backendAdapter: CodexHarnessBackendAdapter(processRunner: processRunner)
-            )
         return BuiltInWorkflowCatalog(
             workflows: [
                 HelloWorldBuiltInWorkflow(runner: headlessRunner),
                 ImplementationReviewBuiltInWorkflow(runner: headlessRunner),
-                planningReviewServices.makeWorkflowRunner(),
             ]
         )
     }

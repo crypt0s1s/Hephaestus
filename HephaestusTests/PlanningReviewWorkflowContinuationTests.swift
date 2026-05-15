@@ -9,12 +9,12 @@ struct PlanningReviewWorkflowContinuationTests {
     func continuePlanningReviewReopensDraftFromLatestReviewedPlan() async throws {
         let fixture = try await makeCompletedReviewFixture()
         let latestPlan = try #require(
-            fixture.model.state.planningInteraction?.latestResolvedOutput?.artifact.content
+            fixture.model.currentPlanningInteractionState?.latestResolvedOutput?.artifact.content
         )
 
         fixture.model.continuePlanningReview()
 
-        let interaction = try #require(fixture.model.state.planningInteraction)
+        let interaction = try #require(fixture.model.currentPlanningInteractionState)
         #expect(interaction.phase == .idle)
         #expect(interaction.submittedOutput == nil)
         #expect(interaction.draft == latestPlan)
@@ -27,7 +27,7 @@ struct PlanningReviewWorkflowContinuationTests {
 
         await fixture.model.requestAnotherPlanningReviewCycle()
 
-        let interaction = try #require(fixture.model.state.planningInteraction)
+        let interaction = try #require(fixture.model.currentPlanningInteractionState)
         #expect(interaction.phase == .completed)
         #expect(interaction.latestResolvedOutput?.producerStepID == "planner-response-cycle-3")
         #expect(interaction.relatedOutputs.contains { $0.producerStepID == "automated-review-cycle-3" })
@@ -39,11 +39,11 @@ struct PlanningReviewWorkflowContinuationTests {
         let model = makePlanningReviewModel(projectURL: projectURL)
         var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
         interaction.updatePlanningDraftCandidate(content: validPlanMarkdown, source: .user)
-        model.update { $0.planningInteraction = interaction }
+        model.seedPlanningInteractionState(interaction)
 
         await model.submitPlanningDraftPlan()
 
-        let completedInteraction = try #require(model.state.planningInteraction)
+        let completedInteraction = try #require(model.currentPlanningInteractionState)
         #expect(completedInteraction.phase == .completed)
         return CompletedPlanningReviewFixture(projectURL: projectURL, model: model)
     }

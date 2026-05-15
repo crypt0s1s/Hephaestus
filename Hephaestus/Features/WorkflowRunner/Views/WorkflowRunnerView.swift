@@ -97,7 +97,6 @@ private struct ProjectRow: View {
 
 private struct WorkflowDetail: View {
     @ObservedObject var model: WorkflowRunnerModel
-    @State private var planningPresentationStyle: PlanningPresentationStyle = .editorPrimary
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
@@ -152,13 +151,8 @@ private struct WorkflowDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: theme.spacing.comfortable) {
                 projectBranchSurface(project)
-                if model.state.planningInteraction != nil {
-                    planningStylePicker
-                    planningInteraction
-                    workflowsSection
-                } else {
-                    workflowsSection
-                }
+                interactiveActivity
+                workflowsSection
                 workflowRunOutput
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -234,28 +228,6 @@ private struct WorkflowDetail: View {
     }
 
     @ViewBuilder
-    private var planningInteraction: some View {
-        if let planningInteraction = model.state.planningInteraction {
-            PlanningInteractionView(
-                state: planningInteraction,
-                presentationStyle: planningPresentationStyle.interactionStyle,
-                action: PlanningInteractionActionProcessor(model: model).handle
-            )
-        }
-    }
-
-    private var planningStylePicker: some View {
-        Picker("Planning layout", selection: $planningPresentationStyle) {
-            ForEach(PlanningPresentationStyle.allCases) { style in
-                Text(style.title).tag(style)
-            }
-        }
-        .pickerStyle(.segmented)
-        .frame(width: 340)
-        .accessibilityIdentifier("planning.layoutPicker")
-    }
-
-    @ViewBuilder
     private var workflowRunOutput: some View {
         if !model.state.timelineOutput.isEmpty || !model.state.output.isEmpty {
             WorkflowRunOutput(
@@ -270,29 +242,11 @@ private struct WorkflowDetail: View {
     private var shouldShowStatusBanner: Bool {
         !model.state.statusMessage.isNilOrEmpty && !model.state.isRunning
     }
-}
 
-private enum PlanningPresentationStyle: String, CaseIterable, Identifiable {
-    case editorPrimary
-    case inline
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .editorPrimary:
-            return "Editor"
-        case .inline:
-            return "Split"
-        }
-    }
-
-    var interactionStyle: PlanningInteractionView.PresentationStyle {
-        switch self {
-        case .editorPrimary:
-            return .editorPrimary
-        case .inline:
-            return .inline
+    @ViewBuilder
+    private var interactiveActivity: some View {
+        if let activity = model.state.interactiveActivity {
+            WorkflowInteractiveActivityHost(model: model, activity: activity)
         }
     }
 }

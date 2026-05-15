@@ -29,6 +29,7 @@ func makePlanningReviewModel(
         backendAdapter: backendAdapter,
         planArtifactMaterializer: planArtifactMaterializer ?? PlanningPlanArtifactStore()
     )
+    let interactiveSessionStore = WorkflowInteractiveSessionStore()
     return WorkflowRunnerModel(
         projectStore: StaticProjectStore(project: project),
         projectPicker: EmptyProjectPicker(),
@@ -37,6 +38,8 @@ func makePlanningReviewModel(
         ),
         builtInWorkflowCatalog: .production(
             processRunner: RecordingProcessRunner(results: []),
+            environment: [:],
+            interactiveSessionStore: interactiveSessionStore,
             planningReviewServices: planningReviewServices
         ),
         externalWorkflowDiscovery: ExternalWorkflowDiscovery(
@@ -44,7 +47,7 @@ func makePlanningReviewModel(
             processRunner: RecordingProcessRunner(results: [])
         ),
         externalWorkflowRunner: ExternalWorkflowRunner(),
-        planningReviewServices: planningReviewServices,
+        interactiveSessionStore: interactiveSessionStore,
         environment: [:]
     )
 }

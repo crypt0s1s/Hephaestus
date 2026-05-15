@@ -7,7 +7,11 @@ import Testing
 struct PlanningReviewWorkflowTests {
     @Test
     func planningReviewWorkflowStartsInInteractiveWaitingState() throws {
-        let catalog = BuiltInWorkflowCatalog.production()
+        let catalog = BuiltInWorkflowCatalog.production(
+            processRunner: RecordingProcessRunner(results: []),
+            environment: [:],
+            interactiveSessionStore: WorkflowInteractiveSessionStore()
+        )
         let planningDefinition = try #require(catalog.workflow(id: PlanningReviewWorkflowRunner.id)?.definition)
         #expect(catalog.definitions.map(\.id).contains(PlanningReviewWorkflowRunner.id))
         #expect(planningDefinition.steps.first?.id == "interactive-planning")
@@ -58,18 +62,18 @@ struct PlanningReviewWorkflowTests {
         var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
         let sessionID = interaction.sessionID
         interaction.updatePlanningDraftCandidate(content: validPlanMarkdown, source: .user)
-        model.update { $0.planningInteraction = interaction }
+        model.seedPlanningInteractionState(interaction)
 
         await model.submitPlanningDraftPlan()
 
-        let submittedOutput = try #require(model.state.planningInteraction?.submittedOutput)
+        let submittedOutput = try #require(model.currentPlanningInteractionState?.submittedOutput)
         try expectAcceptedPlanningFiles(
             projectURL: projectURL,
             sessionID: sessionID,
             submittedOutput: submittedOutput
         )
         expectPlanningReviewWaitingForUser(model)
-        let reviewedInteraction = try #require(model.state.planningInteraction)
+        let reviewedInteraction = try #require(model.currentPlanningInteractionState)
         try expectPlannerResponseArtifacts(
             projectURL: projectURL,
             sessionID: sessionID,
@@ -79,7 +83,7 @@ struct PlanningReviewWorkflowTests {
         model.acceptPlanningReview()
 
         expectPlanningReviewAccepted(model)
-        let latestOutput = try #require(model.state.planningInteraction?.latestResolvedOutput)
+        let latestOutput = try #require(model.currentPlanningInteractionState?.latestResolvedOutput)
         try expectFinalPlanningAcceptance(
             projectURL: projectURL,
             sessionID: sessionID,
@@ -156,8 +160,8 @@ struct PlanningReviewWorkflowTests {
     }
 
     private func expectPlanningReviewWaitingForUser(_ model: WorkflowRunnerModel) {
-        #expect(model.state.planningInteraction?.phase == .completed)
-        #expect(model.state.planningInteraction?.submittedOutput?.artifact.projectRelativePath != nil)
+        #expect(model.currentPlanningInteractionState?.phase == .completed)
+        #expect(model.currentPlanningInteractionState?.submittedOutput?.artifact.projectRelativePath != nil)
         #expect(!model.state.isRunning)
         #expect(model.state.activeWorkflowActivity == .waitingForUserReview)
         #expect(model.state.lastRunSucceeded == nil)
@@ -168,9 +172,11 @@ struct PlanningReviewWorkflowTests {
         #expect(model.state.stepRecords.contains { $0.id == "planning-review-reviewer-1-1" })
         #expect(model.state.stepRecords.contains { $0.id == "planning-review-consolidated-feedback-1" })
         #expect(model.state.stepRecords.contains { $0.id == "planning-review-planner-response-2" })
-        #expect(model.state.planningInteraction?.latestResolvedOutput?.producerStepID == "planner-response-cycle-2")
         #expect(
-            model.state.planningInteraction?.relatedOutputs.contains {
+            model.currentPlanningInteractionState?.latestResolvedOutput?.producerStepID
+                == "planner-response-cycle-2")
+        #expect(
+            model.currentPlanningInteractionState?.relatedOutputs.contains {
                 $0.producerStepID == "automated-review-cycle-1"
             } == true)
     }
@@ -211,8 +217,8 @@ struct PlanningReviewWorkflowTests {
     }
 
     private func expectPlanningReviewAccepted(_ model: WorkflowRunnerModel) {
-        #expect(model.state.planningInteraction?.phase == .accepted)
-        #expect(model.state.planningInteraction?.canResolveCompletedOutput == false)
+        #expect(model.currentPlanningInteractionState?.phase == .accepted)
+        #expect(model.currentPlanningInteractionState?.canResolveCompletedOutput == false)
         #expect(!model.state.isRunning)
         #expect(model.state.lastRunSucceeded == true)
         #expect(
@@ -228,7 +234,7 @@ struct PlanningReviewWorkflowTests {
         var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
         let sessionID = interaction.sessionID
         interaction.updatePlanningDraftCandidate(content: "# Plan\n\nThis is not enough yet.", source: .user)
-        model.update { $0.planningInteraction = interaction }
+        model.seedPlanningInteractionState(interaction)
 
         await model.submitPlanningDraftPlan()
 
@@ -237,10 +243,10 @@ struct PlanningReviewWorkflowTests {
             .appendingPathComponent(".hephaestus/planning-review/\(sessionID)", isDirectory: true)
             .appendingPathComponent("plan.md")
         #expect(!FileManager.default.fileExists(atPath: planURL.path))
-        #expect(model.state.planningInteraction?.phase == .idle)
-        #expect(model.state.planningInteraction?.submittedOutput == nil)
+        #expect(model.currentPlanningInteractionState?.phase == .idle)
+        #expect(model.currentPlanningInteractionState?.submittedOutput == nil)
         #expect(
-            model.state.planningInteraction?.errorMessage?
+            model.currentPlanningInteractionState?.errorMessage?
                 .contains("Plan is missing required sections") == true)
     }
 
@@ -250,12 +256,12 @@ struct PlanningReviewWorkflowTests {
         let model = makePlanningReviewModel(projectURL: projectURL)
         var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
         interaction.note = "Build an interactive planning workflow."
-        model.update { $0.planningInteraction = interaction }
+        model.seedPlanningInteractionState(interaction)
 
         await model.sendPlanningMessage()
 
-        #expect(model.state.planningInteraction?.canSubmit == true)
-        #expect(model.state.planningInteraction?.gateState.canAcceptOutputForReview == true)
+        #expect(model.currentPlanningInteractionState?.canSubmit == true)
+        #expect(model.currentPlanningInteractionState?.gateState.canAcceptOutputForReview == true)
         let draftPath = PlanningPlanArtifactPolicy.draftPlanPath(sessionID: interaction.sessionID)
         let draftURL = projectURL.appendingPathComponent(draftPath)
         #expect(try String(contentsOf: draftURL, encoding: .utf8).contains("## Summary"))
@@ -267,14 +273,14 @@ struct PlanningReviewWorkflowTests {
         let model = makePlanningReviewModel(projectURL: projectURL)
         var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
         interaction.updatePlanningDraftCandidate(content: validPlanMarkdown, source: .agent)
-        model.update { $0.planningInteraction = interaction }
+        model.seedPlanningInteractionState(interaction)
 
-        #expect(model.state.planningInteraction?.canSubmit == true)
+        #expect(model.currentPlanningInteractionState?.canSubmit == true)
 
         await model.submitPlanningDraftPlan()
 
-        #expect(model.state.planningInteraction?.submittedOutput != nil)
-        #expect(model.state.planningInteraction?.gateState.canAcceptOutputForReview == false)
+        #expect(model.currentPlanningInteractionState?.submittedOutput != nil)
+        #expect(model.currentPlanningInteractionState?.gateState.canAcceptOutputForReview == false)
     }
 
     @Test
@@ -283,15 +289,15 @@ struct PlanningReviewWorkflowTests {
         let model = makePlanningReviewModel(projectURL: projectURL)
         var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
         interaction.updatePlanningDraftCandidate(content: "# Plan\n\nStill rough.", source: .user)
-        model.update { $0.planningInteraction = interaction }
+        model.seedPlanningInteractionState(interaction)
 
-        #expect(model.state.planningInteraction?.canSubmit == false)
+        #expect(model.currentPlanningInteractionState?.canSubmit == false)
 
         await model.submitPlanningDraftPlan()
 
-        #expect(model.state.planningInteraction?.submittedOutput == nil)
+        #expect(model.currentPlanningInteractionState?.submittedOutput == nil)
         #expect(
-            model.state.planningInteraction?.errorMessage?
+            model.currentPlanningInteractionState?.errorMessage?
                 .contains("Plan is missing required sections") == true)
     }
 

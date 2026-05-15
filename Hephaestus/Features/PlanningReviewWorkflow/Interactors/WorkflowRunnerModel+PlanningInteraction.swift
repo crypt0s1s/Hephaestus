@@ -18,7 +18,7 @@ extension WorkflowRunnerModel {
 
     func sendPlanningMessage() async {
         guard let project = state.selectedProject,
-            let interaction = state.planningInteraction,
+            let interaction = currentPlanningInteractionState,
             !interaction.trimmedNote.isEmpty,
             interaction.phase == .idle
         else { return }
@@ -68,7 +68,7 @@ extension WorkflowRunnerModel {
 
     func submitPlanningDraftPlan() async {
         guard let project = state.selectedProject,
-            let interaction = state.planningInteraction,
+            let interaction = currentPlanningInteractionState,
             interaction.phase == .idle
         else { return }
         let submittedPlan = interaction.trimmedDraft
@@ -111,7 +111,7 @@ extension WorkflowRunnerModel {
 
     func continuePlanningReview() {
         guard let project = state.selectedProject,
-            let interaction = state.planningInteraction,
+            let interaction = currentPlanningInteractionState,
             interaction.canResolveCompletedOutput
         else { return }
         let latestPlanOutput = interaction.latestResolvedOutput ?? interaction.submittedOutput
@@ -157,7 +157,7 @@ extension WorkflowRunnerModel {
 
     func requestAnotherPlanningReviewCycle() async {
         guard let project = state.selectedProject,
-            let interaction = state.planningInteraction,
+            let interaction = currentPlanningInteractionState,
             let submittedOutput = interaction.submittedOutput,
             interaction.phase == .completed
         else { return }
@@ -294,11 +294,9 @@ extension WorkflowRunnerModel {
     }
 
     func updateInteraction(_ mutate: (inout PlanningInteractionState) -> Void) {
-        update {
-            guard var interaction = $0.planningInteraction else { return }
-            mutate(&interaction)
-            $0.planningInteraction = interaction
-        }
+        guard var interaction = currentPlanningInteractionState else { return }
+        mutate(&interaction)
+        seedPlanningInteractionState(interaction)
     }
 
     private func applySubmittedPlan(
@@ -307,8 +305,8 @@ extension WorkflowRunnerModel {
         plan: String,
         progress: WorkflowRunProgress
     ) {
+        seedPlanningInteractionState(interaction)
         update {
-            $0.planningInteraction = interaction
             $0.stepRecords = progress.stepRecords
             $0.timelineOutput = progress.timeline
             $0.output = """
@@ -321,6 +319,7 @@ extension WorkflowRunnerModel {
             $0.isRunning = true
             $0.activeWorkflowID = PlanningReviewWorkflowRunner.id
             $0.activeWorkflowActivity = .running
+            $0.interactiveActivity = interaction.interactiveActivityProjection
             $0.lastRunWorkflowID = PlanningReviewWorkflowRunner.id
             $0.lastRunSucceeded = nil
             $0.statusMessage = "Submitted plan is validated and ready for automated review cycles."
@@ -343,6 +342,25 @@ extension WorkflowRunnerModel {
         _ result: ProcessResult,
         run: PlanningReviewAutomationRun? = nil
     ) {
+        guard var interaction = currentPlanningInteractionState else { return }
+        interaction.phase = result.exitCode == 0 ? .completed : .idle
+        if let run {
+            interaction.relatedOutputs = run.relatedOutputs
+            interaction.latestResolvedOutput = run.currentPlanOutput
+            if result.exitCode == 0, let latestPlan = run.currentPlanOutput {
+                interaction.draft = latestPlan.artifact.content
+            }
+        }
+        if result.exitCode != 0 {
+            interaction.sessionID = UUID().uuidString
+            interaction.submittedOutput = nil
+            interaction.gateState = .interacting
+            let draft = run?.currentPlanOutput?.artifact.content ?? interaction.draft
+            interaction.updatePlanningDraftCandidate(content: draft, source: .user)
+            interaction.errorMessage =
+                "Automated review failed. Update the draft or submit it again after inspecting the run."
+        }
+        seedPlanningInteractionState(interaction)
         update {
             $0.output = result.output
             $0.timelineOutput = result.timeline.isEmpty ? result.output : result.timeline
@@ -351,30 +369,13 @@ extension WorkflowRunnerModel {
             $0.isRunning = false
             $0.activeWorkflowID = result.exitCode == 0 ? PlanningReviewWorkflowRunner.id : nil
             $0.activeWorkflowActivity = result.exitCode == 0 ? .waitingForUserReview : nil
+            $0.interactiveActivity = interaction.interactiveActivityProjection
             $0.lastRunWorkflowID = PlanningReviewWorkflowRunner.id
             $0.lastRunSucceeded = result.exitCode == 0 ? nil : false
             $0.statusMessage =
                 result.exitCode == 0
                 ? "Automated review cycles finished. Review the plan before accepting it."
                 : "Automated review cycles failed. Inspect the run updates before retrying."
-            $0.planningInteraction?.phase = result.exitCode == 0 ? .completed : .idle
-            if let run {
-                $0.planningInteraction?.relatedOutputs = run.relatedOutputs
-                $0.planningInteraction?.latestResolvedOutput = run.currentPlanOutput
-                if result.exitCode == 0, let latestPlan = run.currentPlanOutput {
-                    $0.planningInteraction?.draft = latestPlan.artifact.content
-                }
-            }
-            if result.exitCode != 0 {
-                $0.planningInteraction?.sessionID = UUID().uuidString
-                $0.planningInteraction?.submittedOutput = nil
-                $0.planningInteraction?.gateState = .interacting
-                if let draft = run?.currentPlanOutput?.artifact.content ?? $0.planningInteraction?.draft {
-                    $0.planningInteraction?.updatePlanningDraftCandidate(content: draft, source: .user)
-                }
-                $0.planningInteraction?.errorMessage =
-                    "Automated review failed. Update the draft or submit it again after inspecting the run."
-            }
         }
     }
 

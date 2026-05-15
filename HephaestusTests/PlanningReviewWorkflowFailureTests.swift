@@ -40,14 +40,14 @@ struct PlanningReviewWorkflowFailureTests {
         interaction.updatePlanningDraftCandidate(content: validPlanMarkdown, source: .user)
         interaction.submittedOutput = submittedOutput(for: interaction)
         interaction.phase = .completed
-        model.update { $0.planningInteraction = interaction }
+        model.seedPlanningInteractionState(interaction)
 
         await model.requestAnotherPlanningReviewCycle()
 
-        #expect(model.state.planningInteraction?.phase == .idle)
-        #expect(model.state.planningInteraction?.submittedOutput == nil)
-        #expect(model.state.planningInteraction?.canSubmit == true)
-        #expect(model.state.planningInteraction?.errorMessage?.contains("Automated review failed") == true)
+        #expect(model.currentPlanningInteractionState?.phase == .idle)
+        #expect(model.currentPlanningInteractionState?.submittedOutput == nil)
+        #expect(model.currentPlanningInteractionState?.canSubmit == true)
+        #expect(model.currentPlanningInteractionState?.errorMessage?.contains("Automated review failed") == true)
         #expect(!model.state.stepRecords.contains { $0.id.hasPrefix("planning-review-planner-response-") })
         #expect(model.state.stepRecords.contains { $0.id == "planning-review-consolidated-feedback-1" })
         #expect(!model.state.isRunning)
@@ -63,11 +63,11 @@ struct PlanningReviewWorkflowFailureTests {
         )
         var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
         interaction.updatePlanningDraftCandidate(content: validPlanMarkdown, source: .user)
-        model.update { $0.planningInteraction = interaction }
+        model.seedPlanningInteractionState(interaction)
 
         await model.submitPlanningDraftPlan()
 
-        #expect(model.state.planningInteraction?.phase == .idle)
+        #expect(model.currentPlanningInteractionState?.phase == .idle)
         #expect(model.state.lastRunSucceeded == false)
         #expect(model.state.stepRecords.contains { $0.id == "planning-review-planner-response-1" })
         #expect(!model.state.stepRecords.contains { $0.id == "planning-review-reviewer-2-1" })
@@ -82,7 +82,7 @@ struct PlanningReviewWorkflowFailureTests {
         )
         var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
         interaction.updatePlanningDraftCandidate(content: validPlanMarkdown, source: .user)
-        model.update { $0.planningInteraction = interaction }
+        model.seedPlanningInteractionState(interaction)
 
         await model.submitPlanningDraftPlan()
 
@@ -92,7 +92,7 @@ struct PlanningReviewWorkflowFailureTests {
             model.state.stepRecords.contains {
                 $0.id == "planning-review-planner-response-2" && $0.status == .failed
             })
-        let recoveredInteraction = try #require(model.state.planningInteraction)
+        let recoveredInteraction = try #require(model.currentPlanningInteractionState)
         #expect(recoveredInteraction.latestResolvedOutput?.producerStepID == "planner-response-cycle-1")
         #expect(recoveredInteraction.draft == alternateValidPlanMarkdown)
         #expect(recoveredInteraction.outputCandidate.content == alternateValidPlanMarkdown)
@@ -109,7 +109,7 @@ struct PlanningReviewWorkflowFailureTests {
         )
         var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
         interaction.updatePlanningDraftCandidate(content: validPlanMarkdown, source: .user)
-        model.update { $0.planningInteraction = interaction }
+        model.seedPlanningInteractionState(interaction)
 
         await model.submitPlanningDraftPlan()
 
@@ -145,14 +145,14 @@ struct PlanningReviewWorkflowFailureTests {
             )
         )
         let model = makePlanningReviewModel(projectURL: projectURL, planArtifactMaterializer: store)
-        model.update { $0.planningInteraction = interaction }
+        model.seedPlanningInteractionState(interaction)
 
         await model.submitPlanningDraftPlan()
 
-        #expect(model.state.planningInteraction?.submittedOutput == nil)
+        #expect(model.currentPlanningInteractionState?.submittedOutput == nil)
         #expect(model.state.activeWorkflowActivity == .waitingForInteraction)
         #expect(!model.state.stepRecords.contains { $0.id.hasPrefix("planning-review-reviewer-") })
-        #expect(model.state.planningInteraction?.errorMessage?.contains("already accepted") == true)
+        #expect(model.currentPlanningInteractionState?.errorMessage?.contains("already accepted") == true)
     }
 
     @Test
@@ -164,7 +164,7 @@ struct PlanningReviewWorkflowFailureTests {
         )
         var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
         interaction.updatePlanningDraftCandidate(content: validPlanMarkdown, source: .user)
-        model.update { $0.planningInteraction = interaction }
+        model.seedPlanningInteractionState(interaction)
 
         await model.submitPlanningDraftPlan()
 
@@ -186,7 +186,7 @@ struct PlanningReviewWorkflowFailureTests {
         )
         var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
         interaction.updatePlanningDraftCandidate(content: validPlanMarkdown, source: .user)
-        model.update { $0.planningInteraction = interaction }
+        model.seedPlanningInteractionState(interaction)
 
         await model.submitPlanningDraftPlan()
 
@@ -216,14 +216,14 @@ struct PlanningReviewWorkflowFailureTests {
     }
 
     private func expectFailedPlanningReviewRecovery(_ model: WorkflowRunnerModel) {
-        #expect(model.state.planningInteraction?.phase == .idle)
-        #expect(model.state.planningInteraction?.submittedOutput == nil)
-        #expect(model.state.planningInteraction?.canSubmit == true)
+        #expect(model.currentPlanningInteractionState?.phase == .idle)
+        #expect(model.currentPlanningInteractionState?.submittedOutput == nil)
+        #expect(model.currentPlanningInteractionState?.canSubmit == true)
         #expect(!model.state.isRunning)
         #expect(model.state.activeWorkflowID == nil)
         #expect(model.state.activeWorkflowActivity == nil)
         #expect(model.state.lastRunSucceeded == false)
-        #expect(model.state.planningInteraction?.errorMessage?.contains("Automated review failed") == true)
+        #expect(model.currentPlanningInteractionState?.errorMessage?.contains("Automated review failed") == true)
         #expect(
             !model.state.stepRecords.contains {
                 $0.id == "planning-review-interactive-user-review" && $0.status == .inProgress

@@ -13,7 +13,6 @@ struct WorkflowRunnerState: Equatable {
     var workflows: [WorkflowDefinition] = []
     var expandedWorkflowIDs: Set<WorkflowDefinition.ID> = [
         ImplementationReviewBuiltInWorkflow.id,
-        PlanningReviewWorkflowRunner.id,
     ]
     var implementationPlanPath = ""
     var implementationBuildCommand = "swift build"
@@ -28,11 +27,7 @@ struct WorkflowRunnerState: Equatable {
     var debugLogURL: URL?
     var lastRunSucceeded: Bool?
     var lastRunWorkflowID: WorkflowDefinition.ID?
-    var planningInteraction: PlanningInteractionState?
-
-    var interactiveActivity: WorkflowInteractiveActivity? {
-        planningInteraction?.interactiveActivityProjection
-    }
+    var interactiveActivity: WorkflowInteractiveActivity?
 
     var selectedProject: WorkflowProject? {
         guard let selectedProjectID else { return nil }

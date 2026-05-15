@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 extension WorkflowRunnerModel {
     func applyCompletedPlannerTurn(draftArtifact: PlanningDraftArtifact) {
-        guard let interaction = state.planningInteraction else { return }
+        guard let interaction = currentPlanningInteractionState else { return }
         let settlement = PlanningReviewPrototypeTurnSettlement(
             artifactStore: planningReviewServices.planArtifactMaterializer
         ).settle(

@@ -4,7 +4,7 @@ import Foundation
 extension WorkflowRunnerModel {
     func acceptPlanningReview() {
         guard let project = state.selectedProject,
-            let interaction = state.planningInteraction,
+            let interaction = currentPlanningInteractionState,
             interaction.canResolveCompletedOutput
         else { return }
         let finalizedOutput = finalizeLatestPlanningOutput(project: project, interaction: interaction)
@@ -34,11 +34,12 @@ extension WorkflowRunnerModel {
             This draft was already accepted for review. Edit or accept the reopened draft to start a new \
             review session.
             """
+        seedPlanningInteractionState(acceptedInteraction)
         update {
-            $0.planningInteraction = acceptedInteraction
             $0.isRunning = false
             $0.activeWorkflowID = PlanningReviewWorkflowRunner.id
             $0.activeWorkflowActivity = .waitingForInteraction
+            $0.interactiveActivity = acceptedInteraction.interactiveActivityProjection
             $0.lastRunWorkflowID = PlanningReviewWorkflowRunner.id
             $0.lastRunSucceeded = nil
             $0.statusMessage = "Draft was already accepted. A new planning session is ready."
@@ -71,10 +72,23 @@ extension WorkflowRunnerModel {
         acceptedSummary: String,
         finalizedOutput: InteractiveStepOutput?
     ) {
+        guard var interaction = currentPlanningInteractionState else { return }
+        interaction.phase = .accepted
+        if let finalizedOutput {
+            interaction.latestResolvedOutput = finalizedOutput
+        }
+        interaction.entries.append(
+            PlanningInteractionEntry(
+                source: .system,
+                text: "Accepted the submitted plan and completed the workflow."
+            )
+        )
+        seedPlanningInteractionState(interaction)
         update {
             $0.isRunning = false
             $0.activeWorkflowID = nil
             $0.activeWorkflowActivity = nil
+            $0.interactiveActivity = interaction.interactiveActivityProjection
             $0.lastRunWorkflowID = PlanningReviewWorkflowRunner.id
             $0.lastRunSucceeded = true
             $0.statusMessage = "Planning review workflow accepted."
@@ -85,16 +99,6 @@ extension WorkflowRunnerModel {
                 Latest accepted plan: \(acceptedSummary)
                 """
             $0.stepRecords = $0.stepRecords.map(Self.acceptedPlanningReviewRecord)
-            $0.planningInteraction?.phase = .accepted
-            if let finalizedOutput {
-                $0.planningInteraction?.latestResolvedOutput = finalizedOutput
-            }
-            $0.planningInteraction?.entries.append(
-                PlanningInteractionEntry(
-                    source: .system,
-                    text: "Accepted the submitted plan and completed the workflow."
-                )
-            )
         }
     }
 

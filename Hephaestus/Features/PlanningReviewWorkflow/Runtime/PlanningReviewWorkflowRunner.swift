@@ -68,6 +68,8 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
     }
 
     func run(context: BuiltInWorkflowRunContext) async -> BuiltInWorkflowRunResult {
+        let interaction = Self.makeInitialInteractionState()
+        context.interactiveSessionStore.setPlanningInteractionState(interaction)
         let progress = startInteractivePlanning(project: context.project)
         return .waiting(
             progress,
@@ -75,7 +77,8 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
                 == Planning Review Workflow ==
                 Interactive planning phase is waiting for user input.
                 Use the upcoming submit-plan action to materialize a draft plan and start automated review.
-                """
+                """,
+            activity: interaction.interactiveActivityProjection
         )
     }
 
