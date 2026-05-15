@@ -6,10 +6,11 @@ struct PlanningInteractionActionProcessor {
         case changeNote(String)
         case tapAddNote
         case changeDraft(String)
-        case tapSubmit
-        case tapAcceptPlan
+        case tapAcceptDraftForReview
+        case tapAcceptReviewedWorkflow
         case tapRequestAnotherCycle
         case tapContinuePlanning
+        case chooseRecovery(InteractiveStepRecoveryAction)
     }
 
     let model: WorkflowRunnerModel
@@ -22,14 +23,16 @@ struct PlanningInteractionActionProcessor {
             Task { await model.sendPlanningMessage() }
         case .changeDraft(let draft):
             model.updatePlanningDraftPlan(draft)
-        case .tapSubmit:
+        case .tapAcceptDraftForReview:
             Task { await model.submitPlanningDraftPlan() }
-        case .tapAcceptPlan:
+        case .tapAcceptReviewedWorkflow:
             model.acceptPlanningReview()
         case .tapRequestAnotherCycle:
             Task { await model.requestAnotherPlanningReviewCycle() }
         case .tapContinuePlanning:
             model.continuePlanningReview()
+        case .chooseRecovery(let recoveryAction):
+            model.choosePlanningRecoveryAction(recoveryAction)
         }
     }
 }

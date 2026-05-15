@@ -155,8 +155,7 @@ final class HephaestusUITests: XCTestCase {
         messageInput.typeText("Build the interactive planning phase")
         app.buttons["planning.sendButton"].click()
 
-        let draftPlan = planningDraftPlan(in: app)
-        XCTAssertTrue(draftPlan.waitForExistence(timeout: 10))
+        reviewGeneratedDraft(in: app)
 
         let submitButton = app.buttons["planning.submitPlan"]
         XCTAssertTrue(waitForEnabled(submitButton, timeout: 20))
@@ -211,6 +210,14 @@ final class HephaestusUITests: XCTestCase {
             return textView
         }
         return app.descendants(matching: .any)["planning.draftPlan"]
+    }
+
+    private func reviewGeneratedDraft(in app: XCUIApplication) {
+        XCTAssertTrue(app.staticTexts["planning.awaitingUserReview"].waitForExistence(timeout: 30))
+        let draftPlan = planningDraftPlan(in: app)
+        XCTAssertTrue(draftPlan.waitForExistence(timeout: 10))
+        draftPlan.click()
+        app.typeText("\n\nReviewed by the UI test.")
     }
 
     private func scrollToPlanningInteraction(in app: XCUIApplication) {

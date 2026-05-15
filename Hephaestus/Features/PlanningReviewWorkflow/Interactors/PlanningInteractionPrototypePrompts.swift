@@ -5,8 +5,8 @@ enum PlanningInteractionPrototypePrompts {
         """
         You are the Codex planning partner inside Hephaestus.
 
-        Discuss the user's planning note briefly, then include the current best draft plan inside a
-        fenced markdown block. The app will only copy the fenced plan into the draft editor.
+        Discuss the user's planning note briefly, then return the current best draft plan as a
+        complete markdown document. The Hephaestus app will validate and write the draft artifact.
 
         Required sections:
         ## Summary
@@ -19,24 +19,6 @@ enum PlanningInteractionPrototypePrompts {
         User note:
         \(note)
         """
-    }
-
-    static func extractDraftPlan(from response: String) -> String? {
-        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        if let fenceStart = trimmed.range(of: "```markdown") ?? trimmed.range(of: "```md"),
-            let fenceEnd = trimmed[fenceStart.upperBound...].range(of: "```") {
-            return String(trimmed[fenceStart.upperBound..<fenceEnd.lowerBound])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        guard trimmed.hasPrefix("# Plan") || trimmed.hasPrefix("## Summary") else { return nil }
-        return hasRequiredPlanSections(trimmed) ? trimmed : nil
-    }
-
-    private static func hasRequiredPlanSections(_ plan: String) -> Bool {
-        ["## Summary", "## Scope", "## Validation"].allSatisfy {
-            plan.localizedCaseInsensitiveContains($0)
-        }
     }
 
     static func submittedPlanSummary(from plan: String) -> String {

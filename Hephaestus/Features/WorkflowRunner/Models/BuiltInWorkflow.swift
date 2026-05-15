@@ -28,16 +28,22 @@ struct BuiltInWorkflowCatalog {
         workflows.first { $0.definition.id == id }
     }
 
-    static func production(processRunner: WorkflowProcessRunning = DefaultProcessRunner())
+    static func production(
+        processRunner: WorkflowProcessRunning = DefaultProcessRunner(),
+        planningReviewServices: PlanningReviewServices? = nil
+    )
         -> BuiltInWorkflowCatalog {
         let headlessRunner = HeadlessCodexWorkflowRunner(processRunner: processRunner)
-        let planningReviewAutomation = PlanningReviewPrototypeAutomation(
-            agentStep: CodexAgentStep(processRunner: processRunner))
+        let planningReviewServices =
+            planningReviewServices
+            ?? PlanningReviewServices(
+                backendAdapter: CodexHarnessBackendAdapter(processRunner: processRunner)
+            )
         return BuiltInWorkflowCatalog(
             workflows: [
                 HelloWorldBuiltInWorkflow(runner: headlessRunner),
                 ImplementationReviewBuiltInWorkflow(runner: headlessRunner),
-                PlanningReviewWorkflowRunner(automation: planningReviewAutomation),
+                planningReviewServices.makeWorkflowRunner(),
             ]
         )
     }

@@ -1,11 +1,13 @@
 import AnvilTheme
+import AnvilUI
 import SwiftUI
 
 struct WorkflowRow: View {
     let workflow: WorkflowDefinition
     let isExpanded: Bool
-    let isRunning: Bool
+    let isRunDisabled: Bool
     let isActive: Bool
+    let activeActivity: ActiveWorkflowActivity?
     let lastRunSucceeded: Bool?
     @Binding var implementationPlanPath: String
     @Binding var implementationBuildCommand: String
@@ -20,8 +22,9 @@ struct WorkflowRow: View {
             WorkflowRowHeader(
                 workflow: workflow,
                 isExpanded: isExpanded,
-                isRunning: isRunning,
+                isRunDisabled: isRunDisabled,
                 isActive: isActive,
+                activeActivity: activeActivity,
                 lastRunSucceeded: lastRunSucceeded,
                 toggleExpansion: toggleExpansion,
                 run: run
@@ -70,8 +73,9 @@ private struct WorkflowRowSurface<Content: View>: View {
 private struct WorkflowRowHeader: View {
     let workflow: WorkflowDefinition
     let isExpanded: Bool
-    let isRunning: Bool
+    let isRunDisabled: Bool
     let isActive: Bool
+    let activeActivity: ActiveWorkflowActivity?
     let lastRunSucceeded: Bool?
     let toggleExpansion: () -> Void
     let run: () -> Void
@@ -80,6 +84,7 @@ private struct WorkflowRowHeader: View {
     var body: some View {
         HStack(alignment: .center, spacing: theme.spacing.cozy) {
             WorkflowDisclosureButton(
+                workflowID: workflow.id,
                 title: workflow.title,
                 isExpanded: isExpanded,
                 action: toggleExpansion
@@ -88,7 +93,12 @@ private struct WorkflowRowHeader: View {
             WorkflowKindIcon(systemImage: workflow.systemImage)
             WorkflowTitleBlock(title: workflow.title, subtitle: workflow.subtitle)
             Spacer(minLength: theme.spacing.cozy)
-            WorkflowStateBadge(isActive: isActive, lastRunSucceeded: lastRunSucceeded)
+            WorkflowStateBadge(
+                workflowID: workflow.id,
+                isActive: isActive,
+                activeActivity: activeActivity,
+                lastRunSucceeded: lastRunSucceeded
+            )
             runButton
         }
         .padding(.horizontal, theme.spacing.cozy)
@@ -96,18 +106,23 @@ private struct WorkflowRowHeader: View {
     }
 
     private var runButton: some View {
-        Button(action: run) {
-            Label("Run", systemImage: "play.fill")
-        }
-        .buttonStyle(.borderedProminent)
-        .tint(theme.colors.accent)
-        .disabled(isRunning)
-        .accessibilityLabel("Run \(workflow.title)")
-        .accessibilityIdentifier("workflow.run.\(workflow.id)")
+        AnvilActionButton(
+            configuration: AnvilActionButtonConfiguration(
+                title: "Run",
+                systemImage: "play.fill",
+                style: .primary,
+                isDisabled: isRunDisabled,
+                accessibilityLabel: "Run \(workflow.title)",
+                accessibilityIdentifier: "workflow.run.\(workflow.id)",
+                help: isRunDisabled ? "A workflow is already active." : "Run \(workflow.title)"
+            ),
+            action: run
+        )
     }
 }
 
 private struct WorkflowDisclosureButton: View {
+    let workflowID: WorkflowDefinition.ID
     let title: String
     let isExpanded: Bool
     let action: () -> Void
@@ -123,7 +138,7 @@ private struct WorkflowDisclosureButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isExpanded ? "Collapse \(title)" : "Expand \(title)")
-        .accessibilityIdentifier("workflow.disclosure.\(title)")
+        .accessibilityIdentifier("workflow.disclosure.\(workflowID)")
     }
 }
 
@@ -141,7 +156,7 @@ private struct WorkflowKindIcon: View {
     }
 }
 
-private struct WorkflowTitleBlock: View {
+struct WorkflowTitleBlock: View {
     let title: String
     let subtitle: String
     @Environment(\.anvilTheme) private var theme
@@ -161,27 +176,68 @@ private struct WorkflowTitleBlock: View {
 }
 
 private struct WorkflowStateBadge: View {
+    let workflowID: WorkflowDefinition.ID
     let isActive: Bool
+    let activeActivity: ActiveWorkflowActivity?
     let lastRunSucceeded: Bool?
-    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
         Group {
             if isActive {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel("Running")
+                activeBadge
             } else if let lastRunSucceeded {
-                Image(systemName: lastRunSucceeded ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(lastRunSucceeded ? theme.colors.success : theme.colors.danger)
-                    .accessibilityLabel(lastRunSucceeded ? "Last run completed" : "Last run failed")
+                AnvilStatusIndicator(
+                    state: lastRunSucceeded ? .succeeded : .failed,
+                    accessibilityLabel: lastRunSucceeded ? "Last run completed" : "Last run failed"
+                )
             } else {
-                Color.clear
-                    .accessibilityHidden(true)
+                AnvilStatusIndicator(state: .idle)
             }
         }
-        .frame(width: 22, height: 22)
+        .frame(width: 132, alignment: .trailing)
+        .frame(minHeight: 22)
+        .accessibilityIdentifier("workflow.stateBadge.\(workflowID)")
+        .accessibilityValue(accessibilityValue)
+    }
+
+    @ViewBuilder
+    private var activeBadge: some View {
+        switch activeActivity {
+        case .running:
+            AnvilStatusIndicator(state: .running, label: "Running")
+        case .waitingForInteraction:
+            WorkflowActivityPill(
+                title: "Waiting for draft",
+                systemImage: "pause.circle.fill"
+            )
+        case .waitingForUserReview:
+            WorkflowActivityPill(
+                title: "Review needed",
+                systemImage: "person.crop.circle.badge.checkmark"
+            )
+        case nil:
+            Color.clear
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var accessibilityValue: String {
+        if isActive {
+            switch activeActivity {
+            case .running:
+                return "running"
+            case .waitingForInteraction:
+                return "waiting for interaction"
+            case .waitingForUserReview:
+                return "waiting for user review"
+            case nil:
+                return "active"
+            }
+        }
+        if let lastRunSucceeded {
+            return lastRunSucceeded ? "succeeded" : "failed"
+        }
+        return "idle"
     }
 }
 
@@ -228,14 +284,9 @@ private struct WorkflowInputsConfiguration: View {
     let inputs: [WorkflowInputDefinition]
     let values: [String: String]
     let updateInput: (String, String) -> Void
-    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.compact) {
-            Text("Inputs")
-                .font(theme.typography.caption)
-                .foregroundStyle(theme.colors.textSecondary)
-
+        AnvilFieldSection(title: "Inputs") {
             ForEach(inputs, id: \.id) { input in
                 WorkflowInputField(
                     placeholder: input.label,
@@ -266,14 +317,9 @@ private struct WorkflowStepList: View {
 private struct ImplementationReviewConfiguration: View {
     @Binding var planPath: String
     @Binding var buildCommand: String
-    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.compact) {
-            Text("Configuration")
-                .font(theme.typography.caption)
-                .foregroundStyle(theme.colors.textSecondary)
-
+        AnvilFieldSection(title: "Configuration") {
             WorkflowInputField(
                 placeholder: "Project-relative plan path, for example docs/plans/my-plan.md",
                 text: $planPath,
@@ -295,55 +341,12 @@ private struct WorkflowInputField: View {
     let accessibilityLabel: String
 
     var body: some View {
-        TextField(placeholder, text: $text)
-            .textFieldStyle(WorkflowInputTextFieldStyle())
-            .accessibilityLabel(accessibilityLabel)
-    }
-}
-
-private struct WorkflowInputTextFieldStyle: TextFieldStyle {
-    @Environment(\.anvilTheme) private var theme
-
-    func _body(configuration: TextField<Self._Label>) -> some View {
-        configuration
-            .textFieldStyle(.plain)
-            .foregroundStyle(theme.colors.textPrimary)
-            .font(theme.typography.body)
-            .padding(.horizontal, theme.spacing.cozy)
-            .padding(.vertical, theme.spacing.compact)
-            .background(theme.colors.elevatedPanelBackground)
-            .clipShape(RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous)
-                    .stroke(theme.colors.border, lineWidth: 1)
-            }
-    }
-}
-
-private struct WorkflowStepRow: View {
-    let step: WorkflowStepDefinition
-    let stepNumber: Int
-    @Environment(\.anvilTheme) private var theme
-
-    var body: some View {
-        HStack(alignment: .top, spacing: theme.spacing.compact) {
-            WorkflowStepNumber(number: stepNumber)
-            WorkflowTitleBlock(title: step.title, subtitle: step.subtitle)
-        }
-        .padding(.vertical, theme.spacing.tiny)
-    }
-}
-
-private struct WorkflowStepNumber: View {
-    let number: Int
-    @Environment(\.anvilTheme) private var theme
-
-    var body: some View {
-        Text("\(number)")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(theme.colors.textSecondary)
-            .frame(width: 22, height: 22)
-            .background(theme.colors.panelBackground)
-            .clipShape(Circle())
+        AnvilTextField(
+            text: $text,
+            configuration: AnvilTextFieldConfiguration(
+                placeholder: placeholder,
+                accessibilityLabel: accessibilityLabel
+            )
+        )
     }
 }

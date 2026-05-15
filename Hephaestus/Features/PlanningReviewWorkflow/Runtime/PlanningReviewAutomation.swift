@@ -7,21 +7,25 @@ protocol PlanningReviewAutomating {
     func runCycle(
         cycle: Int,
         project: WorkflowProject,
-        submittedOutput: InteractiveStepOutput,
-        run: inout PlanningReviewPrototypeAutomationRun,
+        run: inout PlanningReviewAutomationRun,
         progress: WorkflowProgressHandler?
-    ) async
+    ) async -> Bool
 
-    func finish(_ run: PlanningReviewPrototypeAutomationRun) -> ProcessResult
+    func finish(_ run: PlanningReviewAutomationRun) -> ProcessResult
 }
 
 struct PlanningReviewPrototypeAutomation {
     private static let reviewers = ["Reviewer A", "Reviewer B"]
     let reviewCycleCount = 2
-    private let agentStep: CodexAgentStep
+    let agent: any PlanningAgentRunning
+    let artifactStore: any PlanningPlanArtifactMaterializing
 
-    init(agentStep: CodexAgentStep) {
-        self.agentStep = agentStep
+    init(
+        agent: any PlanningAgentRunning,
+        artifactStore: any PlanningPlanArtifactMaterializing
+    ) {
+        self.agent = agent
+        self.artifactStore = artifactStore
     }
 
     var startedTimeline: String {
@@ -37,38 +41,151 @@ extension PlanningReviewPrototypeAutomation: PlanningReviewAutomating {
     func runCycle(
         cycle: Int,
         project: WorkflowProject,
-        submittedOutput: InteractiveStepOutput,
-        run: inout PlanningReviewPrototypeAutomationRun,
+        run: inout PlanningReviewAutomationRun,
         progress: WorkflowProgressHandler?
-    ) async {
-        let reviewerRecords = await runReviewerCycle(
+    ) async -> Bool {
+        guard let currentPlanOutput = run.currentPlanOutput else {
+            markMissingCurrentPlan(cycle: cycle, run: &run)
+            return false
+        }
+        let reviewerResults = await runReviewers(
             cycle: cycle,
             project: project,
-            submittedOutput: submittedOutput,
+            planOutput: currentPlanOutput,
             planPath: run.planPath
         )
-        run.records.append(contentsOf: reviewerRecords.records)
-        run.timeline += "\nAutomated review cycle \(cycle) completed."
-        await progress?(
-            WorkflowRunProgress(timeline: run.timeline, debugLogURL: nil, stepRecords: run.records)
-        )
+        let reviewerRecords = reviewRecords(from: reviewerResults, cycle: cycle)
+        run.records.append(contentsOf: reviewerRecords)
+
+        guard let feedback = await appendConsolidatedFeedback(
+            from: reviewerResults,
+            project: project,
+            cycle: cycle,
+            run: &run,
+            progress: progress
+        ) else { return false }
+        await appendReviewerCycle(feedback, cycle: cycle, run: &run, progress: progress)
+
+        guard await canRunPlannerResponse(feedback, cycle: cycle, run: &run, progress: progress)
+        else { return false }
 
         let responseRecord = await runPlannerResponse(
             cycle: cycle,
             project: project,
-            submittedOutput: submittedOutput,
-            feedback: reviewerRecords.feedback
+            sessionID: run.sessionID,
+            currentPlanOutput: currentPlanOutput,
+            consolidatedFeedbackOutput: feedback.consolidatedOutput
         )
-        run.records.append(responseRecord)
-        run.timeline += "\nPlanner response cycle \(cycle) completed."
+        return await appendPlannerResponse(responseRecord, cycle: cycle, run: &run, progress: progress)
+    }
+
+    private func appendConsolidatedFeedback(
+        from reviewerResults: [PlanningReviewerRun],
+        project: WorkflowProject,
+        cycle: Int,
+        run: inout PlanningReviewAutomationRun,
+        progress: WorkflowProgressHandler?
+    ) async -> PlanningReviewCycleFeedback? {
+        do {
+            return try makeCycleFeedback(
+                from: reviewerResults,
+                project: project,
+                sessionID: run.sessionID,
+                cycle: cycle
+            )
+        } catch {
+            await appendAutomationFailure(
+                id: "planning-review-consolidated-feedback-\(cycle)",
+                title: "Consolidated feedback cycle \(cycle)",
+                summary: "Could not persist consolidated review feedback: \(error.localizedDescription)",
+                cycle: cycle,
+                run: &run,
+                progress: progress
+            )
+            return nil
+        }
+    }
+
+    private func markMissingCurrentPlan(
+        cycle: Int,
+        run: inout PlanningReviewAutomationRun
+    ) {
+        let record = WorkflowStepRecord(
+            id: "planning-review-cycle-\(cycle)-missing-plan",
+            title: "Review cycle \(cycle)",
+            status: .failed,
+            summary: "Automated review cycle could not start because no current plan output exists.",
+            sortOrder: 100 + (cycle * 100)
+        )
+        run.terminalFailureRecordID = record.id
+        run.records.append(record)
+    }
+
+    private func appendReviewerCycle(
+        _ reviewerRecords: PlanningReviewCycleFeedback,
+        cycle: Int,
+        run: inout PlanningReviewAutomationRun,
+        progress: WorkflowProgressHandler?
+    ) async {
+        run.records.append(reviewerRecords.consolidatedRecord)
+        run.relatedOutputs.append(reviewerRecords.consolidatedOutput)
+        run.timeline += "\nAutomated review cycle \(cycle) completed."
         await progress?(
             WorkflowRunProgress(timeline: run.timeline, debugLogURL: nil, stepRecords: run.records)
         )
     }
 
-    func finish(_ run: PlanningReviewPrototypeAutomationRun) -> ProcessResult {
+    private func canRunPlannerResponse(
+        _ reviewerRecords: PlanningReviewCycleFeedback,
+        cycle: Int,
+        run: inout PlanningReviewAutomationRun,
+        progress: WorkflowProgressHandler?
+    ) async -> Bool {
+        guard !reviewerRecords.successfulReviewerResults.isEmpty else {
+            run.terminalFailureRecordID = reviewerRecords.consolidatedRecord.id
+            run.timeline += "\nPlanner response cycle \(cycle) skipped because all reviewers failed."
+            await progress?(
+                WorkflowRunProgress(timeline: run.timeline, debugLogURL: nil, stepRecords: run.records)
+            )
+            return false
+        }
+        return true
+    }
+
+    private func appendPlannerResponse(
+        _ responseRecord: PlanningPlannerResponseRun,
+        cycle: Int,
+        run: inout PlanningReviewAutomationRun,
+        progress: WorkflowProgressHandler?
+    ) async -> Bool {
+        run.records.append(responseRecord.record)
+        if responseRecord.record.status == .failed {
+            run.terminalFailureRecordID = responseRecord.record.id
+        }
+        if let revisedPlanOutput = responseRecord.revisedPlanOutput {
+            run.currentPlanOutput = revisedPlanOutput
+            run.relatedOutputs.append(revisedPlanOutput)
+            run.planPath = revisedPlanOutput.artifact.projectRelativePath ?? run.planPath
+        }
+        run.timeline += "\nPlanner response cycle \(cycle) completed."
+        await progress?(
+            WorkflowRunProgress(timeline: run.timeline, debugLogURL: nil, stepRecords: run.records)
+        )
+        return responseRecord.record.status != .failed
+    }
+
+    func finish(_ run: PlanningReviewAutomationRun) -> ProcessResult {
         var finishedRun = run
-        if let failedRecord = finishedRun.records.first(where: { $0.status == .failed }) {
+        let failedRecord = finishedRun.terminalFailureRecordID.flatMap { id in
+            finishedRun.records.first { $0.id == id }
+        }
+            ?? finishedRun.records.first(where: { record in
+                record.status == .failed && !record.id.hasPrefix("planning-review-reviewer-")
+            })
+            ?? (finishedRun.relatedOutputs.isEmpty
+                ? finishedRun.records.first(where: { $0.status == .failed })
+                : nil)
+        if let failedRecord {
             finishedRun.timeline += "\nAutomated review cycles failed at \(failedRecord.title)."
             return ProcessResult(
                 exitCode: 1,
@@ -88,6 +205,7 @@ extension PlanningReviewPrototypeAutomation: PlanningReviewAutomating {
             output: """
                 == Planning Review Workflow ==
                 Automated review cycles completed for \(finishedRun.planPath).
+                Latest reviewed plan: \(finishedRun.currentPlanOutput?.summary ?? "No revised plan summary available.")
                 Interactive user review is waiting.
                 """,
             timeline: finishedRun.timeline,
@@ -95,59 +213,49 @@ extension PlanningReviewPrototypeAutomation: PlanningReviewAutomating {
         )
     }
 
-    private func runReviewerCycle(
+    private func runReviewers(
         cycle: Int,
         project: WorkflowProject,
-        submittedOutput: InteractiveStepOutput,
+        planOutput: InteractiveStepOutput,
         planPath: String
-    ) async -> (records: [WorkflowStepRecord], feedback: String) {
+    ) async -> [PlanningReviewerRun] {
         async let reviewerA = runReviewer(
             name: Self.reviewers[0],
             cycle: cycle,
             project: project,
-            submittedOutput: submittedOutput,
+            planOutput: planOutput,
             planPath: planPath
         )
         async let reviewerB = runReviewer(
             name: Self.reviewers[1],
             cycle: cycle,
             project: project,
-            submittedOutput: submittedOutput,
+            planOutput: planOutput,
             planPath: planPath
         )
-        let results = await [reviewerA, reviewerB]
-        return (reviewRecords(from: results, cycle: cycle), reviewFeedback(from: results))
+        return await [reviewerA, reviewerB]
     }
 
-    private func runPlannerResponse(
-        cycle: Int,
+    private func makeCycleFeedback(
+        from results: [PlanningReviewerRun],
         project: WorkflowProject,
-        submittedOutput: InteractiveStepOutput,
-        feedback: String
-    ) async -> WorkflowStepRecord {
-        let prompt = plannerResponsePrompt(
+        sessionID: String,
+        cycle: Int
+    ) throws -> PlanningReviewCycleFeedback {
+        let consolidatedOutput = try consolidatedFeedbackOutput(
+            from: results,
             project: project,
-            submittedOutput: submittedOutput,
-            feedback: feedback
+            sessionID: sessionID,
+            cycle: cycle
         )
-        let result = await agentStep.run(
-            CodexAgentInvocation(
-                name: "Planner Response Cycle \(cycle)",
-                project: project,
-                prompt: prompt,
-                timeoutSeconds: 180,
-                sandboxMode: "read-only"
-            ))
-        return WorkflowStepRecord(
-            id: "planning-review-planner-response-\(cycle)",
-            title: "Planner response cycle \(cycle)",
-            status: result.exitCode == 0 ? .succeeded : .failed,
-            summary: result.exitCode == 0
-                ? "Planner responded to review feedback cycle \(cycle)."
-                : "Planner response failed in cycle \(cycle).",
-            inputPreview: prompt,
-            outputPreview: result.output,
-            sortOrder: 130 + (cycle * 100)
+        return PlanningReviewCycleFeedback(
+            consolidatedRecord: consolidatedFeedbackRecord(
+                output: consolidatedOutput,
+                results: results,
+                cycle: cycle
+            ),
+            consolidatedOutput: consolidatedOutput,
+            successfulReviewerResults: results.filter { $0.result.exitCode == 0 }
         )
     }
 
@@ -165,17 +273,17 @@ extension PlanningReviewPrototypeAutomation: PlanningReviewAutomating {
         name: String,
         cycle: Int,
         project: WorkflowProject,
-        submittedOutput: InteractiveStepOutput,
+        planOutput: InteractiveStepOutput,
         planPath: String
     ) async -> PlanningReviewerRun {
         let prompt = reviewerPrompt(
             name: name,
             project: project,
-            submittedOutput: submittedOutput,
+            planOutput: planOutput,
             planPath: planPath
         )
-        let result = await agentStep.run(
-            CodexAgentInvocation(
+        let result = await agent.run(
+            PlanningAgentInvocation(
                 name: "\(name) Planning Review Cycle \(cycle)",
                 project: project,
                 prompt: prompt,
@@ -204,63 +312,73 @@ extension PlanningReviewPrototypeAutomation: PlanningReviewAutomating {
         }
     }
 
-    private func reviewFeedback(from results: [PlanningReviewerRun]) -> String {
-        results
-            .map { "\($0.name):\n\($0.result.output)" }
+    private func consolidatedFeedbackOutput(
+        from results: [PlanningReviewerRun],
+        project: WorkflowProject,
+        sessionID: String,
+        cycle: Int
+    ) throws -> InteractiveStepOutput {
+        let content = results
+            .map { result in
+                let status = result.result.exitCode == 0 ? "succeeded" : "failed"
+                return """
+                ## \(result.name)
+                Status: \(status)
+
+                \(result.result.output)
+                """
+            }
             .joined(separator: "\n\n")
+        return try artifactStore.materializeConsolidatedFeedback(
+            project: project,
+            sessionID: sessionID,
+            cycle: cycle,
+            content: content
+        )
     }
 
-    private func reviewerPrompt(
-        name: String,
-        project: WorkflowProject,
-        submittedOutput: InteractiveStepOutput,
-        planPath: String
-    ) -> String {
-        """
-        You are \(name), a review-only planning agent.
-
-        Review the submitted implementation plan. Do not edit files.
-
-        Project path: \(project.path)
-        Plan artifact path: \(planPath)
-
-        Plan content:
-        \(submittedOutput.artifact.content)
-
-        Return at most 5 findings with severity P1, P2, or P3. Return exactly "pass" if the plan is
-        clear, scoped, and testable.
-        """
+    private func consolidatedFeedbackRecord(
+        output: InteractiveStepOutput,
+        results: [PlanningReviewerRun],
+        cycle: Int
+    ) -> WorkflowStepRecord {
+        let failedCount = results.filter { $0.result.exitCode != 0 }.count
+        let succeededCount = results.count - failedCount
+        let status: WorkflowStepRecordStatus = succeededCount == 0 ? .failed : .succeeded
+        return WorkflowStepRecord(
+            id: "planning-review-consolidated-feedback-\(cycle)",
+            title: "Consolidated feedback cycle \(cycle)",
+            status: status,
+            summary: failedCount == 0
+                ? "Created consolidated review feedback message for cycle \(cycle)."
+                : "Created consolidated review feedback message with \(failedCount) failed reviewer(s).",
+            inputPreview: "Reviewer outputs: \(results.map(\.name).joined(separator: ", "))",
+            outputPreview: output.artifact.content,
+            sortOrder: 120 + (cycle * 100)
+        )
     }
 
-    private func plannerResponsePrompt(
-        project: WorkflowProject,
-        submittedOutput: InteractiveStepOutput,
-        feedback: String
-    ) -> String {
-        """
-        You are the planner agent responding to automated review feedback.
-
-        Do not edit files. Explain how the plan should change, then provide a revised markdown plan.
-
-        Project path: \(project.path)
-
-        Current plan:
-        \(submittedOutput.artifact.content)
-
-        Review feedback:
-        \(feedback)
-        """
+    private func appendAutomationFailure(
+        id: WorkflowStepRecord.ID,
+        title: String,
+        summary: String,
+        cycle: Int,
+        run: inout PlanningReviewAutomationRun,
+        progress: WorkflowProgressHandler?
+    ) async {
+        let record = WorkflowStepRecord(
+            id: id,
+            title: title,
+            status: .failed,
+            summary: summary,
+            sortOrder: 120 + (cycle * 100)
+        )
+        run.terminalFailureRecordID = record.id
+        run.records.append(record)
+        run.timeline += "\nAutomated review cycle \(cycle) failed at \(title)."
+        await progress?(
+            WorkflowRunProgress(timeline: run.timeline, debugLogURL: nil, stepRecords: run.records)
+        )
     }
-}
 
-struct PlanningReviewPrototypeAutomationRun {
-    var timeline: String
-    var records: [WorkflowStepRecord]
-    var planPath: String
-}
-
-struct PlanningReviewerRun {
-    let name: String
-    let prompt: String
-    let result: ProcessResult
 }

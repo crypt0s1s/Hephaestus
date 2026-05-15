@@ -16,18 +16,24 @@ final class WorkflowRunnerModel: ObservableObject {
     private let environment: [String: String]
 
     convenience init() {
+        let processRunner = DefaultProcessRunner()
+        let environment = ProcessInfo.processInfo.environment
+        let planningReviewServices = Self.planningReviewServices(
+            processRunner: processRunner,
+            environment: environment
+        )
         self.init(
             projectStore: UserDefaultsProjectStore(),
             projectPicker: NSOpenPanelProjectPicker(),
             branchReader: GitBranchReader(),
-            builtInWorkflowCatalog: .production(),
+            builtInWorkflowCatalog: .production(
+                processRunner: processRunner,
+                planningReviewServices: planningReviewServices
+            ),
             externalWorkflowDiscovery: ExternalWorkflowDiscovery(),
             externalWorkflowRunner: ExternalWorkflowRunner(),
-            planningReviewServices: Self.planningReviewServices(
-                environment: ProcessInfo.processInfo.environment,
-                processRunner: DefaultProcessRunner()
-            ),
-            environment: ProcessInfo.processInfo.environment
+            planningReviewServices: planningReviewServices,
+            environment: environment
         )
     }
 
@@ -145,6 +151,7 @@ final class WorkflowRunnerModel: ObservableObject {
         update {
             $0.isRunning = true
             $0.activeWorkflowID = workflow.id
+            $0.activeWorkflowActivity = .running
             $0.statusMessage = nil
             $0.timelineOutput = "\(workflow.title) started."
             $0.stepRecords = []
@@ -173,6 +180,7 @@ final class WorkflowRunnerModel: ObservableObject {
         update {
             $0.isRunning = true
             $0.activeWorkflowID = workflow.id
+            $0.activeWorkflowActivity = .running
             $0.statusMessage = "Running \(workflow.title)..."
             $0.timelineOutput = "External workflow started: \(workflow.title)"
             $0.stepRecords = []
@@ -198,6 +206,7 @@ final class WorkflowRunnerModel: ObservableObject {
                 $0.timelineOutput = result.timeline.isEmpty ? result.output : result.timeline
                 $0.isRunning = false
                 $0.activeWorkflowID = nil
+                $0.activeWorkflowActivity = nil
                 $0.lastRunWorkflowID = workflow.id
                 $0.lastRunSucceeded = result.exitCode == 0
                 $0.statusMessage =
@@ -239,8 +248,11 @@ final class WorkflowRunnerModel: ObservableObject {
                 $0.debugLogURL = progress.debugLogURL
                 $0.stepRecords = progress.stepRecords
                 $0.timelineOutput = progress.timeline
-                $0.isRunning = true
+                $0.isRunning = workflow.id != PlanningReviewWorkflowRunner.id
                 $0.activeWorkflowID = workflow.id
+                $0.activeWorkflowActivity = workflow.id == PlanningReviewWorkflowRunner.id
+                    ? .waitingForInteraction
+                    : .running
                 $0.lastRunWorkflowID = nil
                 $0.lastRunSucceeded = nil
                 $0.statusMessage = nil
@@ -265,6 +277,7 @@ final class WorkflowRunnerModel: ObservableObject {
             $0.timelineOutput = result.timeline.isEmpty ? result.output : result.timeline
             $0.isRunning = false
             $0.activeWorkflowID = nil
+            $0.activeWorkflowActivity = nil
             $0.lastRunWorkflowID = workflow.id
             $0.lastRunSucceeded = result.exitCode == 0
             $0.statusMessage =
@@ -307,13 +320,17 @@ final class WorkflowRunnerModel: ObservableObject {
     }
 
     private static func planningReviewServices(
-        environment: [String: String],
-        processRunner: WorkflowProcessRunning
+        processRunner: WorkflowProcessRunning,
+        environment: [String: String]
     ) -> PlanningReviewServices {
-        PlanningReviewServices(
-            backendAdapter: environment["HEPHAESTUS_PROVIDER"] == "mock"
-                ? MockHarnessBackendAdapter()
-                : CodexHarnessBackendAdapter(processRunner: processRunner)
+        #if DEBUG
+        if environment["HEPHAESTUS_PROVIDER"] == "mock" {
+            return PlanningReviewServices(backendAdapter: UITestHarnessBackendAdapter())
+        }
+        #endif
+
+        return PlanningReviewServices(
+            backendAdapter: CodexHarnessBackendAdapter(processRunner: processRunner)
         )
     }
 

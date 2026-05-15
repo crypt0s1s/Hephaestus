@@ -2,20 +2,24 @@ import Foundation
 
 struct PlanningReviewServices {
     let backendAdapter: any HarnessBackendAdapter
+    let interactionBackend: any PlanningInteractionBackendRunning
     let planArtifactMaterializer: any PlanningPlanArtifactMaterializing
     let automation: any PlanningReviewAutomating
 
     init(
         backendAdapter: any HarnessBackendAdapter,
+        interactionBackend: (any PlanningInteractionBackendRunning)? = nil,
         planArtifactMaterializer: any PlanningPlanArtifactMaterializing = PlanningPlanArtifactStore(),
         automation: (any PlanningReviewAutomating)? = nil
     ) {
         self.backendAdapter = backendAdapter
+        self.interactionBackend = interactionBackend ?? PlanningInteractionBackend(backendAdapter: backendAdapter)
         self.planArtifactMaterializer = planArtifactMaterializer
         self.automation =
             automation
             ?? PlanningReviewPrototypeAutomation(
-                agentStep: CodexAgentStep(backendAdapter: backendAdapter))
+                agent: CodexPlanningAgentRunner(backendAdapter: backendAdapter),
+                artifactStore: planArtifactMaterializer)
     }
 
     func makeWorkflowRunner() -> PlanningReviewWorkflowRunner {

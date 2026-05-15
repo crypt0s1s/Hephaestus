@@ -49,16 +49,17 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
         ),
     ]
 
-    static func makeInitialInteractionState() -> WorkflowInteractionState {
-        WorkflowInteractionState(
+    static func makeInitialInteractionState() -> PlanningInteractionState {
+        PlanningInteractionState(
             workflowID: id,
             stepID: "interactive-planning",
             title: "Interactive planning",
             subtitle: "Write or paste a draft plan, then submit it as a workflow message.",
             inputPlaceholder: "Add a note to keep with this interaction",
             draftTitle: "Draft plan",
+            outputCandidate: PlanningInteractionState.makePlanningDraftCandidate(),
             initialEntries: [
-                WorkflowInteractionEntry(
+                PlanningInteractionEntry(
                     source: .system,
                     text: "This workflow is paused until you submit a reviewable draft plan."
                 )
@@ -105,46 +106,81 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
     func runAutomatedReviewCycles(
         project: WorkflowProject,
         submittedOutput: InteractiveStepOutput,
+        sessionID: String,
         progress: WorkflowProgressHandler? = nil
-    ) async -> ProcessResult {
+    ) async -> PlanningReviewAutomationResult {
         let planPath = submittedOutput.artifact.projectRelativePath ?? "the submitted plan artifact"
-        var run = PlanningReviewPrototypeAutomationRun(
+        var run = PlanningReviewAutomationRun(
+            sessionID: sessionID,
             timeline: automation.startedTimeline,
             records: submittedPlanRecords(project: project, output: submittedOutput),
-            planPath: planPath
+            planPath: planPath,
+            currentPlanOutput: submittedOutput,
+            relatedOutputs: [submittedOutput]
         )
         for cycle in 1...automation.reviewCycleCount {
-            await automation.runCycle(
+            let shouldContinue = await automation.runCycle(
                 cycle: cycle,
                 project: project,
-                submittedOutput: submittedOutput,
                 run: &run,
                 progress: progress
             )
+            guard shouldContinue else { break }
         }
-        return finishPlanningReviewPrototypeAutomationRun(run)
+        return PlanningReviewAutomationResult(
+            processResult: finishPlanningReviewAutomationRun(run),
+            run: run
+        )
     }
 
-    func runPlanningReviewPrototypeAutomationCycle(
+    func runPlanningReviewAutomationCycle(
         cycle: Int,
         project: WorkflowProject,
-        submittedOutput: InteractiveStepOutput,
-        run: inout PlanningReviewPrototypeAutomationRun,
+        run: inout PlanningReviewAutomationRun,
         progress: WorkflowProgressHandler?
     ) async {
-        await automation.runCycle(
+        _ = await automation.runCycle(
             cycle: cycle,
             project: project,
-            submittedOutput: submittedOutput,
             run: &run,
             progress: progress
         )
     }
 
-    func finishPlanningReviewPrototypeAutomationRun(
-        _ run: PlanningReviewPrototypeAutomationRun
+    func makeAdditionalAutomationRun(
+        interaction: PlanningInteractionState,
+        submittedOutput: InteractiveStepOutput,
+        currentPlanOutput: InteractiveStepOutput,
+        timeline: String,
+        records: [WorkflowStepRecord]
+    ) -> PlanningReviewAutomationRun {
+        PlanningReviewAutomationRun(
+            sessionID: interaction.sessionID,
+            timeline: timeline.isEmpty ? automation.startedTimeline : timeline,
+            records: records.filter { $0.id != Self.interactiveUserReviewRecordID },
+            planPath: currentPlanOutput.artifact.projectRelativePath ?? "the latest reviewed plan",
+            currentPlanOutput: currentPlanOutput,
+            relatedOutputs: interaction.relatedOutputs.isEmpty ? [submittedOutput] : interaction.relatedOutputs
+        )
+    }
+
+    func nextAutomationCycleNumber(from records: [WorkflowStepRecord]) -> Int {
+        let existingCycles = records.compactMap(Self.reviewerCycleNumber)
+        return (existingCycles.max() ?? 0) + 1
+    }
+
+    func finishPlanningReviewAutomationRun(
+        _ run: PlanningReviewAutomationRun
     ) -> ProcessResult {
         automation.finish(run)
+    }
+
+    nonisolated private static let interactiveUserReviewRecordID = "planning-review-interactive-user-review"
+
+    nonisolated private static func reviewerCycleNumber(from record: WorkflowStepRecord) -> Int? {
+        guard record.id.hasPrefix("planning-review-reviewer-") else { return nil }
+        let parts = record.id.split(separator: "-")
+        return parts.dropFirst(3).first.flatMap { Int($0) }
     }
 
     private func initialPlanningRecords(project: WorkflowProject) -> [WorkflowStepRecord] {

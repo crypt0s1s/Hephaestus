@@ -198,8 +198,11 @@ private struct WorkflowDetail: View {
             WorkflowRow(
                 workflow: workflow,
                 isExpanded: model.state.isWorkflowExpanded(workflow),
-                isRunning: model.state.isRunning,
+                isRunDisabled: model.state.isWorkflowStartBlocked,
                 isActive: model.state.activeWorkflowID == workflow.id,
+                activeActivity: model.state.activeWorkflowID == workflow.id
+                    ? model.state.activeWorkflowActivity
+                    : nil,
                 lastRunSucceeded: model.state.lastRunWorkflowID == workflow.id
                     ? model.state.lastRunSucceeded : nil,
                 implementationPlanPath: Binding(
