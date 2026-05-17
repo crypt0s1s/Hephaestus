@@ -157,6 +157,8 @@ final class HephaestusUITests: XCTestCase {
 
         let draftPlan = planningDraftPlan(in: app)
         XCTAssertTrue(draftPlan.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Edit the generated draft before submitting it to the workflow."].exists)
+        editPlanningDraftForReview(draftPlan)
 
         let submitButton = app.buttons["planning.submitPlan"]
         XCTAssertTrue(waitForEnabled(submitButton, timeout: 20))
@@ -167,10 +169,6 @@ final class HephaestusUITests: XCTestCase {
         XCTAssertTrue(app.buttons["planning.continuePlanning"].waitForExistence(timeout: 10))
         XCTAssertTrue(
             app.staticTexts["Interactive user review"]
-                .waitForExistence(timeout: 10))
-        app.buttons["planning.acceptPlan"].click()
-        XCTAssertTrue(
-            app.staticTexts["Planning review workflow accepted."]
                 .waitForExistence(timeout: 10))
     }
 
@@ -211,6 +209,11 @@ final class HephaestusUITests: XCTestCase {
             return textView
         }
         return app.descendants(matching: .any)["planning.draftPlan"]
+    }
+
+    private func editPlanningDraftForReview(_ draftPlan: XCUIElement) {
+        draftPlan.click()
+        draftPlan.typeText("\n\nReviewed in UI test.")
     }
 
     private func scrollToPlanningInteraction(in app: XCUIApplication) {

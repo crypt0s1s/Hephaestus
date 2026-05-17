@@ -105,22 +105,34 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
     func runAutomatedReviewCycles(
         project: WorkflowProject,
         submittedOutput: InteractiveStepOutput,
+        submittedPlanMessage: WorkflowMessage? = nil,
+        persistMessages: @escaping PlanningReviewMessagePersistenceHandler = { _ in },
         progress: WorkflowProgressHandler? = nil
     ) async -> ProcessResult {
         let planPath = submittedOutput.artifact.projectRelativePath ?? "the submitted plan artifact"
+        let planMessage = submittedPlanMessage ?? Self.makeSubmittedPlanMessage(
+            runID: submittedOutput.id,
+            output: submittedOutput
+        )
         var run = PlanningReviewPrototypeAutomationRun(
             timeline: automation.startedTimeline,
             records: submittedPlanRecords(project: project, output: submittedOutput),
-            planPath: planPath
+            planPath: planPath,
+            workflowMessages: [planMessage]
         )
         for cycle in 1...automation.reviewCycleCount {
+            let currentPlanMessage = run.currentPlanMessage ?? planMessage
             await automation.runCycle(
                 cycle: cycle,
                 project: project,
-                submittedOutput: submittedOutput,
+                currentPlanMessage: currentPlanMessage,
                 run: &run,
+                persistMessages: persistMessages,
                 progress: progress
             )
+            if run.terminalFailure != nil {
+                break
+            }
         }
         return finishPlanningReviewPrototypeAutomationRun(run)
     }
@@ -128,15 +140,17 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
     func runPlanningReviewPrototypeAutomationCycle(
         cycle: Int,
         project: WorkflowProject,
-        submittedOutput: InteractiveStepOutput,
+        currentPlanMessage: WorkflowMessage,
         run: inout PlanningReviewPrototypeAutomationRun,
+        persistMessages: @escaping PlanningReviewMessagePersistenceHandler = { _ in },
         progress: WorkflowProgressHandler?
     ) async {
         await automation.runCycle(
             cycle: cycle,
             project: project,
-            submittedOutput: submittedOutput,
+            currentPlanMessage: currentPlanMessage,
             run: &run,
+            persistMessages: persistMessages,
             progress: progress
         )
     }
@@ -215,6 +229,28 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
 
     private func submittedPlanPreview(from output: InteractiveStepOutput) -> String {
         output.artifact.content
+    }
+
+    static func makeSubmittedPlanMessage(
+        runID: WorkflowRun.ID,
+        output: InteractiveStepOutput
+    ) -> WorkflowMessage {
+        WorkflowMessage(
+            id: output.id,
+            runID: runID,
+            kind: .submittedPlan,
+            producerStepID: output.producerStepID,
+            createdAt: output.createdAt,
+            payload: .submittedPlan(
+                SubmittedPlanMessagePayload(
+                    title: output.artifact.title,
+                    contentType: output.artifact.contentType,
+                    content: output.artifact.content,
+                    projectRelativePath: output.artifact.projectRelativePath
+                )
+            ),
+            summary: output.summary
+        )
     }
 
     private func interactivePlanningRecord(
