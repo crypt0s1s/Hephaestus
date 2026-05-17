@@ -337,7 +337,7 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
             guard !didResume, process.isRunning else { return }
             process.terminate()
         }
-        let message = "\nExternal workflow timed out after \(timeoutSeconds) seconds."
+        let message = "\n\(ExternalWorkflowEvent.timeoutSummary(seconds: timeoutSeconds))"
         finish(exitCode: 124, errorOutput: message, failureEvent: .processTimeout(seconds: timeoutSeconds))
     }
 

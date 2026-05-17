@@ -29,13 +29,13 @@ struct ExternalWorkflowRunnerTests {
         let result = await runner.run(workflow: timeoutWorkflow(), project: timeoutProject())
 
         #expect(result.exitCode == 124)
-        #expect(result.output.contains("External workflow timed out after 1 seconds."))
-        #expect(result.timeline.contains("External workflow timed out after 1 seconds."))
+        #expect(result.output.contains("External workflow timed out after 1 second."))
+        #expect(result.timeline.contains("External workflow timed out after 1 second."))
         #expect(result.timeline.contains("External workflow finished: External Swift workflow"))
         let debugLogURL = try #require(result.debugLogURL)
         let rawProcessLog = debugLogURL.appendingPathComponent("raw-process.log")
         let rawOutput = try String(contentsOf: rawProcessLog, encoding: .utf8)
-        #expect(rawOutput.contains("External workflow timed out after 1 seconds."))
+        #expect(rawOutput.contains("External workflow timed out after 1 second."))
     }
 
     private func timeoutWorkflow() -> WorkflowDefinition {

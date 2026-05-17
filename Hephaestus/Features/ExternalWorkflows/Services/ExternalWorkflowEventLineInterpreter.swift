@@ -59,10 +59,15 @@ extension ExternalWorkflowEvent {
             stepID: nil,
             title: "External Swift workflow",
             status: .failed,
-            summary: "External workflow timed out after \(seconds) seconds.",
+            summary: timeoutSummary(seconds: seconds),
             inputPreview: nil,
             outputPreview: nil
         )
+    }
+
+    nonisolated static func timeoutSummary(seconds: Int) -> String {
+        let unit = seconds == 1 ? "second" : "seconds"
+        return "External workflow timed out after \(seconds) \(unit)."
     }
 
     private nonisolated static func preview(_ line: String) -> String {
