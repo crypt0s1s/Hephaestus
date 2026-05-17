@@ -279,6 +279,25 @@ struct PlanningReviewWorkflowTests {
     }
 
     @Test
+    func generatedPlanningDraftCanBeSubmittedThroughAutomatedReview() async throws {
+        let projectURL = try makeTemporaryPlanningProject()
+        let model = makePlanningReviewModel(projectURL: projectURL)
+        var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
+        interaction.note = "Build an interactive planning workflow."
+        model.seedPlanningInteractionState(interaction)
+
+        await model.sendPlanningMessage()
+        await model.submitPlanningDraftPlan()
+
+        #expect(model.currentPlanningInteractionState?.phase == .completed)
+        #expect(model.currentPlanningInteractionState?.submittedOutput != nil)
+        #expect(
+            model.currentPlanningInteractionState?.latestResolvedOutput?.producerStepID
+                == "planner-response-cycle-2")
+        #expect(model.state.stepRecords.contains { $0.id == "planning-review-interactive-user-review" })
+    }
+
+    @Test
     func validAgentDraftCandidateCanBeAcceptedAsReviewedOutput() async throws {
         let projectURL = try makeTemporaryPlanningProject()
         let model = makePlanningReviewModel(projectURL: projectURL)

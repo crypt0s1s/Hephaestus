@@ -131,11 +131,13 @@ private struct InspectorArtifactReferencesSection: View {
                 Text("Artifacts")
                     .font(theme.typography.caption)
                     .foregroundStyle(theme.colors.textSecondary)
+                    .accessibilityIdentifier("workflow.stepArtifacts.title")
 
                 ForEach(artifacts) { artifact in
                     InspectorArtifactReferenceRow(artifact: artifact)
                 }
             }
+            .accessibilityIdentifier("workflow.stepArtifacts")
         }
     }
 }
@@ -191,6 +193,7 @@ private struct InspectorArtifactReferenceRow: View {
             RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous)
                 .stroke(theme.colors.border, lineWidth: 1)
         }
+        .accessibilityIdentifier("workflow.stepArtifact.\(artifact.id)")
     }
 }
 
