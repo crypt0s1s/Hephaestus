@@ -54,6 +54,27 @@ struct ExternalWorkflowDiscoveryTests {
         assertDiscoveryCalls(runner.recordedCalls(), expectedCommands: ["validate"])
     }
 
+    @Test
+    func skipsWorkflowWhenDescriptionDoesNotMatchManifest() async throws {
+        let packageURL = try makeTemporaryProject()
+        try writeManifest(to: packageURL)
+        let mismatchedDescription = externalWorkflowDescriptionJSON
+            .replacingOccurrences(of: "\"version\": \"0.1.0\"", with: "\"version\": \"9.9.9\"")
+        let runner = RecordingProcessRunner(results: [
+            ProcessResult(exitCode: 0, output: #"{"status":"ok"}"#),
+            ProcessResult(exitCode: 0, output: mismatchedDescription),
+        ])
+        let discovery = ExternalWorkflowDiscovery(
+            environment: ["HEPHAESTUS_EXTERNAL_WORKFLOW_ROOT": packageURL.path],
+            processRunner: runner
+        )
+
+        let workflows = await discovery.discoverWorkflows()
+
+        #expect(workflows.isEmpty)
+        assertDiscoveryCalls(runner.recordedCalls(), expectedCommands: ["validate", "describe"])
+    }
+
     private func writeManifest(to packageURL: URL) throws {
         try """
         id = "external-implementation-review-example"

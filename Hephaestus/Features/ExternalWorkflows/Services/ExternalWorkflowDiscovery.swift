@@ -20,7 +20,8 @@ struct ExternalWorkflowDiscovery {
         for root in workflowRoots {
             guard let manifest = loadManifest(packageURL: root),
                 await validate(manifest: manifest),
-                let description = await describe(manifest: manifest)
+                let description = await describe(manifest: manifest),
+                isCompatible(description: description, manifest: manifest)
             else {
                 continue
             }
@@ -91,6 +92,14 @@ struct ExternalWorkflowDiscovery {
             return false
         }
         return validation.status == "ok"
+    }
+
+    private func isCompatible(
+        description: WorkflowDescription,
+        manifest: ExternalWorkflowManifest
+    ) -> Bool {
+        description.id == manifest.id
+            && description.version == manifest.version
     }
 
     private func runPackageCommand(
