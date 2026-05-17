@@ -150,6 +150,11 @@ swift run ImplementationReviewWorkflow validate
 swift run ImplementationReviewWorkflow run --input /path/to/input.json
 ```
 
+Hephaestus supervises each external `run` process with a default 120-second timeout. Local validation
+and UI automation may override that limit with `HEPHAESTUS_EXTERNAL_WORKFLOW_TIMEOUT_SECONDS`, but
+production workflows should assume the app may terminate a hung child process and surface a failed
+workflow event plus captured debug logs.
+
 `describe` returns workflow metadata:
 
 ```json
@@ -301,6 +306,7 @@ A likely evolution is:
 - `describe` metadata renders in the workflow list without app-specific knowledge of the package internals.
 - `run` streams JSONL events that update the same run updates UI used by built-in workflows.
 - A failed external workflow exits without crashing or freezing the app.
+- A timed-out external workflow terminates visibly instead of leaving the run stuck.
 - Debug logs capture full stdout/stderr for external workflow runs.
 - The protocol is sufficient to represent Implementation Review Loop phases at a summary level.
 
