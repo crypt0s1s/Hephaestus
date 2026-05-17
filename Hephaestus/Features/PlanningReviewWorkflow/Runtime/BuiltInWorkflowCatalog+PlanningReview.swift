@@ -34,7 +34,16 @@ extension PlanningReviewServices {
     ) -> PlanningReviewServices {
         #if DEBUG
         if environment["HEPHAESTUS_PROVIDER"] == "mock" {
-            return PlanningReviewServices(backendAdapter: UITestHarnessBackendAdapter())
+            let artifactStore = PlanningPlanArtifactStore()
+            return PlanningReviewServices(
+                backendAdapter: UITestHarnessBackendAdapter(),
+                planArtifactMaterializer: artifactStore,
+                automation: PlanningReviewPrototypeAutomation(
+                    agent: UITestPlanningAgentRunner(),
+                    artifactStore: artifactStore,
+                    reviewCycleCount: 1
+                )
+            )
         }
         #endif
 

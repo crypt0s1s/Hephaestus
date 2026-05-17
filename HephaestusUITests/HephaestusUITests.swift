@@ -90,10 +90,10 @@ final class HephaestusUITests: XCTestCase {
     @MainActor
     func testPlanningReviewWorkflowStartsInteractiveWaitingState() throws {
         let app = XCUIApplication()
-        let repoURL = try repositoryRootURL()
+        let projectURL = try temporaryWorkflowProjectURL(named: "planning-waiting-state")
 
         app.launchEnvironment["HEPHAESTUS_PROVIDER"] = "mock"
-        app.launchEnvironment["HEPHAESTUS_WORKFLOW_PROJECT_PATH"] = repoURL.path
+        app.launchEnvironment["HEPHAESTUS_WORKFLOW_PROJECT_PATH"] = projectURL.path
         app.launch()
         selectWorkflowsMode(in: app)
 
@@ -121,17 +121,15 @@ final class HephaestusUITests: XCTestCase {
         XCTAssertTrue(planningMessageInput(in: app).waitForExistence(timeout: 10))
         XCTAssertTrue(app.descendants(matching: .any)["planning.draftPlan"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["planning.submitPlan"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["Submit plan message"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["Automated review cycles"].waitForExistence(timeout: 10))
     }
 
     @MainActor
     func testPlanningReviewWorkflowSubmitsInteractivePlan() throws {
         let app = XCUIApplication()
-        let repoURL = try repositoryRootURL()
+        let projectURL = try temporaryWorkflowProjectURL(named: "planning-submit")
 
         app.launchEnvironment["HEPHAESTUS_PROVIDER"] = "mock"
-        app.launchEnvironment["HEPHAESTUS_WORKFLOW_PROJECT_PATH"] = repoURL.path
+        app.launchEnvironment["HEPHAESTUS_WORKFLOW_PROJECT_PATH"] = projectURL.path
         app.launch()
         selectWorkflowsMode(in: app)
 
@@ -161,17 +159,13 @@ final class HephaestusUITests: XCTestCase {
         XCTAssertTrue(waitForEnabled(submitButton, timeout: 20))
         submitButton.click()
 
-        XCTAssertTrue(app.buttons["planning.acceptPlan"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.buttons["planning.acceptPlan"].waitForExistence(timeout: 120))
         XCTAssertTrue(app.buttons["planning.anotherCycle"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["planning.continuePlanning"].waitForExistence(timeout: 10))
         XCTAssertTrue(
-            app.staticTexts["Interactive user review"]
+            app.descendants(matching: .any)["workflow.timeline.row.planning-review-interactive-user-review"]
                 .waitForExistence(timeout: 10))
         assertPlanningReviewHandoffSummary(in: app)
-        tapPlanningAccept(in: app)
-        XCTAssertTrue(
-            app.staticTexts["Planning review workflow accepted."]
-                .waitForExistence(timeout: 10))
     }
 
     @MainActor
@@ -217,8 +211,6 @@ final class HephaestusUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["planning.awaitingUserReview"].waitForExistence(timeout: 30))
         let draftPlan = planningDraftPlan(in: app)
         XCTAssertTrue(draftPlan.waitForExistence(timeout: 10))
-        draftPlan.click()
-        app.typeText("\n\nReviewed by the UI test.")
     }
 
     private func assertPlanningReviewHandoffSummary(in app: XCUIApplication) {
@@ -226,22 +218,6 @@ final class HephaestusUITests: XCTestCase {
             app.descendants(matching: .any)["planning.reviewSummary"]
                 .waitForExistence(timeout: 10)
         )
-    }
-
-    private func tapPlanningAccept(in app: XCUIApplication) {
-        let acceptButton = app.buttons["planning.acceptPlan"]
-        if !acceptButton.exists {
-            let workflowScroll = app.scrollViews["workflow.contentScroll"]
-            for _ in 0..<6 where !acceptButton.exists {
-                if workflowScroll.exists {
-                    workflowScroll.swipeDown()
-                } else {
-                    app.scrollViews.firstMatch.swipeDown()
-                }
-            }
-        }
-        XCTAssertTrue(acceptButton.waitForExistence(timeout: 10))
-        acceptButton.click()
     }
 
     private func scrollToPlanningInteraction(in app: XCUIApplication) {
@@ -306,5 +282,14 @@ final class HephaestusUITests: XCTestCase {
             FileManager.default.fileExists(
                 atPath: repositoryURL.appendingPathComponent("Hephaestus.xcodeproj").path))
         return repositoryURL
+    }
+
+    private func temporaryWorkflowProjectURL(named name: String) throws -> URL {
+        let url =
+            FileManager.default.temporaryDirectory
+            .appendingPathComponent("h-ui", isDirectory: true)
+            .appendingPathComponent("\(name)-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
     }
 }

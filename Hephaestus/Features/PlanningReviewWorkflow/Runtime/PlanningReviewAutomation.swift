@@ -16,16 +16,18 @@ protocol PlanningReviewAutomating {
 
 struct PlanningReviewPrototypeAutomation {
     private static let reviewers = ["Reviewer A", "Reviewer B"]
-    let reviewCycleCount = 2
+    let reviewCycleCount: Int
     let agent: any PlanningAgentRunning
     let artifactStore: any PlanningPlanArtifactMaterializing
 
     init(
         agent: any PlanningAgentRunning,
-        artifactStore: any PlanningPlanArtifactMaterializing
+        artifactStore: any PlanningPlanArtifactMaterializing,
+        reviewCycleCount: Int = 2
     ) {
         self.agent = agent
         self.artifactStore = artifactStore
+        self.reviewCycleCount = reviewCycleCount
     }
 
     var startedTimeline: String {

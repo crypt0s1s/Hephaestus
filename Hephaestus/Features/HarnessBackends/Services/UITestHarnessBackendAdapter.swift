@@ -28,7 +28,10 @@ struct UITestHarnessBackendAdapter: HarnessBackendAdapter {
 
     func cancelTurn(_ request: CancelTurnRequest) async throws {}
 
-    private static func output(for prompt: String) -> String {
+    fileprivate static func output(for prompt: String) -> String {
+        if prompt.contains("planner agent responding to automated review feedback") {
+            return planningPlan(for: prompt)
+        }
         if prompt.contains("review-only planning agent") {
             return "pass"
         }
@@ -59,6 +62,19 @@ struct UITestHarnessBackendAdapter: HarnessBackendAdapter {
         ## Open Questions
         - Confirm the long-term pause and resume envelope.
         """
+    }
+}
+
+struct UITestPlanningAgentRunner: PlanningAgentRunning {
+    func run(_ invocation: PlanningAgentInvocation) async -> ProcessResult {
+        let output = UITestHarnessBackendAdapter.output(for: invocation.prompt)
+        return ProcessResult(
+            exitCode: 0,
+            output: """
+                == \(invocation.name) ==
+                \(output)
+                """
+        )
     }
 }
 
