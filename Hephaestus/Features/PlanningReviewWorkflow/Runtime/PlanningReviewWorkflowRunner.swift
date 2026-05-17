@@ -225,6 +225,7 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
                 Goal: Draft a reviewable implementation plan.
                 """,
             outputPreview: output.summary ?? "Submitted plan artifact \(output.id)",
+            artifactReferences: [.init(output: output, title: "Submitted plan")],
             sortOrder: step.sortOrder
         )
     }
@@ -238,6 +239,7 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
             summary: output.summary ?? "Submitted plan artifact \(output.id)",
             inputPreview: "Producer: interactive planning step",
             outputPreview: submittedPlanPreview(from: output),
+            artifactReferences: [.init(output: output, title: "Submitted plan")],
             sortOrder: step.sortOrder
         )
     }

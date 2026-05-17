@@ -49,6 +49,8 @@ struct PlanningReviewWorkflowTests {
         #expect(progress.stepRecords[0].status == .succeeded)
         #expect(progress.stepRecords[1].status == .succeeded)
         #expect(progress.stepRecords[1].outputPreview?.contains("Build the interactive phase.") == true)
+        #expect(progress.stepRecords[1].artifactReferences.first?.title == "Submitted plan")
+        #expect(progress.stepRecords[1].artifactReferences.first?.id == message.id)
         #expect(progress.stepRecords[2].status == .pending)
         #expect(
             progress.stepRecords[2].summary
@@ -173,6 +175,12 @@ struct PlanningReviewWorkflowTests {
         #expect(model.state.stepRecords.contains { $0.id == "planning-review-consolidated-feedback-1" })
         #expect(model.state.stepRecords.contains { $0.id == "planning-review-planner-response-2" })
         #expect(
+            model.state.stepRecords.first { $0.id == "planning-review-consolidated-feedback-1" }?
+                .artifactReferences.first?.title == "Consolidated review feedback")
+        #expect(
+            model.state.stepRecords.first { $0.id == "planning-review-planner-response-2" }?
+                .artifactReferences.first?.title == "Planner response plan")
+        #expect(
             model.currentPlanningInteractionState?.latestResolvedOutput?.producerStepID
                 == "planner-response-cycle-2")
         #expect(
@@ -225,6 +233,9 @@ struct PlanningReviewWorkflowTests {
             model.state.stepRecords.contains {
                 $0.id == "planning-review-interactive-user-review" && $0.status == .succeeded
             })
+        #expect(
+            model.state.stepRecords.first { $0.id == "planning-review-interactive-user-review" }?
+                .artifactReferences.first?.title == "Final accepted plan")
     }
 
     @Test

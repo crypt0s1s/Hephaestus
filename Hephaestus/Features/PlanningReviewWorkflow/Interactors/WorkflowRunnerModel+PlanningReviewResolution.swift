@@ -98,16 +98,24 @@ extension WorkflowRunnerModel {
                 Planning review workflow accepted.
                 Latest accepted plan: \(acceptedSummary)
                 """
-            $0.stepRecords = $0.stepRecords.map(Self.acceptedPlanningReviewRecord)
+            $0.stepRecords = $0.stepRecords.map {
+                Self.acceptedPlanningReviewRecord($0, finalizedOutput: finalizedOutput)
+            }
         }
     }
 
-    private static func acceptedPlanningReviewRecord(_ record: WorkflowStepRecord)
+    private static func acceptedPlanningReviewRecord(
+        _ record: WorkflowStepRecord,
+        finalizedOutput: InteractiveStepOutput?
+    )
         -> WorkflowStepRecord {
         guard record.id == "planning-review-interactive-user-review" else { return record }
         var acceptedRecord = record
         acceptedRecord.status = .succeeded
         acceptedRecord.summary = "User accepted the reviewed plan."
+        if let finalizedOutput {
+            acceptedRecord.artifactReferences = [.init(output: finalizedOutput, title: "Final accepted plan")]
+        }
         return acceptedRecord
     }
 }

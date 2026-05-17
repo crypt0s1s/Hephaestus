@@ -354,6 +354,7 @@ extension PlanningReviewPrototypeAutomation: PlanningReviewAutomating {
                 : "Created consolidated review feedback message with \(failedCount) failed reviewer(s).",
             inputPreview: "Reviewer outputs: \(results.map(\.name).joined(separator: ", "))",
             outputPreview: output.artifact.content,
+            artifactReferences: [.init(output: output, title: "Consolidated review feedback")],
             sortOrder: 120 + (cycle * 100)
         )
     }

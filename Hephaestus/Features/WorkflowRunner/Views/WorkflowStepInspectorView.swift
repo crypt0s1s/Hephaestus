@@ -108,6 +108,7 @@ private struct WorkflowStepInspectorContent: View {
             VStack(alignment: .leading, spacing: theme.spacing.cozy) {
                 InspectorRuntimeSection(record: record)
                 InspectorSection(title: "What happened", text: record.summary)
+                InspectorArtifactReferencesSection(artifacts: record.artifactReferences)
                 InspectorOptionalSection(
                     title: "Result", text: WorkflowStepOutputSummary(record: record).text)
                 InspectorOptionalDisclosureSection(title: "Prompt", text: record.inputPreview)
@@ -116,6 +117,79 @@ private struct WorkflowStepInspectorContent: View {
             }
             .padding(theme.spacing.cozy)
             .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
+}
+
+private struct InspectorArtifactReferencesSection: View {
+    let artifacts: [WorkflowStepArtifactReference]
+    @Environment(\.anvilTheme) private var theme
+
+    var body: some View {
+        if !artifacts.isEmpty {
+            VStack(alignment: .leading, spacing: theme.spacing.squishy) {
+                Text("Artifacts")
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colors.textSecondary)
+
+                ForEach(artifacts) { artifact in
+                    InspectorArtifactReferenceRow(artifact: artifact)
+                }
+            }
+        }
+    }
+}
+
+private struct InspectorArtifactReferenceRow: View {
+    let artifact: WorkflowStepArtifactReference
+    @Environment(\.anvilTheme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.squishy) {
+            HStack(alignment: .firstTextBaseline, spacing: theme.spacing.compact) {
+                Text(artifact.title)
+                    .font(theme.typography.caption.weight(.semibold))
+                    .foregroundStyle(theme.colors.textPrimary)
+
+                Text(artifact.contentType)
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colors.textTertiary)
+
+                Spacer()
+
+                if let path = artifact.projectRelativePath {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(path, forType: .string)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(theme.colors.textSecondary)
+                    .accessibilityLabel("Copy \(artifact.title) path")
+                    .accessibilityIdentifier("workflow.stepArtifact.\(artifact.id).copyPath")
+                }
+            }
+
+            if let summary = artifact.summary, !summary.isEmpty {
+                Text(summary)
+                    .font(theme.typography.caption)
+                    .foregroundStyle(theme.colors.textSecondary)
+            }
+
+            if let path = artifact.projectRelativePath {
+                Text(path)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(theme.colors.textSecondary)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(theme.spacing.compact)
+        .background(theme.colors.panelBackground)
+        .clipShape(RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous)
+                .stroke(theme.colors.border, lineWidth: 1)
         }
     }
 }

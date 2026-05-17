@@ -40,3 +40,15 @@ struct InteractiveStepArtifact: Equatable {
         self.projectRelativePath = projectRelativePath
     }
 }
+
+extension WorkflowStepArtifactReference {
+    init(output: InteractiveStepOutput, title: String? = nil) {
+        self.init(
+            id: output.id,
+            title: title ?? output.artifact.title,
+            contentType: output.artifact.contentType,
+            summary: output.summary,
+            projectRelativePath: output.artifact.projectRelativePath
+        )
+    }
+}

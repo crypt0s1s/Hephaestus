@@ -84,6 +84,7 @@ extension PlanningReviewPrototypeAutomation {
             summary: plannerResponseSummary(cycle: cycle, result: result, materialized: materialized),
             inputPreview: prompt,
             outputPreview: result.output,
+            artifactReferences: plannerResponseArtifactReferences(from: materialized),
             sortOrder: 130 + (cycle * 100)
         )
         .plannerResponseRun(revisedPlanOutput: materialized.output)
@@ -108,6 +109,12 @@ extension PlanningReviewPrototypeAutomation {
             return "Planner response plan could not be persisted: \(error.localizedDescription)"
         }
         return "Planner response failed in cycle \(cycle)."
+    }
+
+    private func plannerResponseArtifactReferences(
+        from materialized: PlanningPlannerResponseMaterialization
+    ) -> [WorkflowStepArtifactReference] {
+        materialized.output.map { [.init(output: $0, title: "Planner response plan")] } ?? []
     }
 }
 

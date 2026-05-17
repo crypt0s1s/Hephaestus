@@ -105,6 +105,7 @@ nonisolated struct WorkflowStepRecord: Identifiable, Equatable {
     var summary: String
     var inputPreview: String?
     var outputPreview: String?
+    var artifactReferences: [WorkflowStepArtifactReference]
     var sortOrder: Int
     var hierarchy: WorkflowStepRecordHierarchy?
     var timing: WorkflowStepTiming?
@@ -116,6 +117,7 @@ nonisolated struct WorkflowStepRecord: Identifiable, Equatable {
         summary: String,
         inputPreview: String? = nil,
         outputPreview: String? = nil,
+        artifactReferences: [WorkflowStepArtifactReference] = [],
         sortOrder: Int,
         hierarchy: WorkflowStepRecordHierarchy? = nil,
         timing: WorkflowStepTiming? = nil
@@ -126,9 +128,32 @@ nonisolated struct WorkflowStepRecord: Identifiable, Equatable {
         self.summary = summary
         self.inputPreview = inputPreview
         self.outputPreview = outputPreview
+        self.artifactReferences = artifactReferences
         self.sortOrder = sortOrder
         self.hierarchy = hierarchy
         self.timing = timing
+    }
+}
+
+nonisolated struct WorkflowStepArtifactReference: Identifiable, Equatable {
+    let id: String
+    var title: String
+    var contentType: String
+    var summary: String?
+    var projectRelativePath: String?
+
+    nonisolated init(
+        id: String,
+        title: String,
+        contentType: String,
+        summary: String? = nil,
+        projectRelativePath: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.contentType = contentType
+        self.summary = summary
+        self.projectRelativePath = projectRelativePath
     }
 }
 
