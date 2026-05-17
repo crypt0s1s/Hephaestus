@@ -213,8 +213,10 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
     private let recorder: ExternalWorkflowProgressRecorder
     private let progress: WorkflowProgressHandler?
     private let continuation: CheckedContinuation<ProcessResult, Never>
+    private let lineInterpreter = ExternalWorkflowEventLineInterpreter()
     private let lock = NSLock()
     private var output = ""
+    private var lineBuffer = ""
     private var didResume = false
 
     init(
@@ -235,14 +237,16 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
 
     func consume(_ data: Data) {
         guard let chunk = String(data: data, encoding: .utf8) else { return }
-        lock.withLock {
+        let completedLines = lock.withLock {
             output.append(chunk)
+            lineBuffer.append(chunk)
+            return takeCompletedLines()
         }
         Task {
             await debugLog.append(chunk)
             await debugLog.append(chunk, to: "raw-process.log")
-            for line in chunk.split(separator: "\n") {
-                guard let event = decodeEvent(String(line)) else { continue }
+            for line in completedLines {
+                guard let event = lineInterpreter.event(from: line) else { continue }
                 await recorder.record(event)
                 if let progress {
                     let snapshot = await recorder.progress
@@ -265,7 +269,10 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
 
         if let result {
             Task {
-                await replayEvents(from: result.output)
+                await replayEventLines(from: result.output)
+                if result.exitCode != 0 {
+                    await recorder.record(.processExitFailure(exitCode: result.exitCode))
+                }
                 let finalProgress = await recorder.progress
                 continuation.resume(
                     returning: ProcessResult(
@@ -287,15 +294,19 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
         finish(exitCode: 124, errorOutput: "\nExternal workflow timed out after 120 seconds.")
     }
 
-    private func replayEvents(from output: String) async {
+    private func replayEventLines(from output: String) async {
         for line in output.split(separator: "\n") {
-            guard let event = decodeEvent(String(line)) else { continue }
+            guard let event = lineInterpreter.event(from: String(line)) else { continue }
             await recorder.record(event)
         }
     }
 
-    private func decodeEvent(_ line: String) -> ExternalWorkflowEvent? {
-        guard let data = line.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(ExternalWorkflowEvent.self, from: data)
+    private func takeCompletedLines() -> [String] {
+        var lines: [String] = []
+        while let newlineIndex = lineBuffer.firstIndex(of: "\n") {
+            lines.append(String(lineBuffer[..<newlineIndex]))
+            lineBuffer.removeSubrange(...newlineIndex)
+        }
+        return lines
     }
 }
