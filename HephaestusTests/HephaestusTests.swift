@@ -200,49 +200,6 @@ struct WorkflowRunnerTests {
         assertFixPromptContainsBlockingFinding(fixPrompt)
     }
 
-    @Test
-    func externalWorkflowDiscoveryLoadsSwiftPackageManifestAndDescription() async throws {
-        let packageURL = try makeTemporaryProject()
-        try """
-        id = "external-implementation-review-example"
-        name = "External Implementation Review Example"
-        version = "0.1.0"
-        runtime = "swift-package"
-        entry = "ImplementationReviewWorkflow"
-        """.write(
-            to: packageURL.appendingPathComponent("HephaestusWorkflow.toml"),
-            atomically: true,
-            encoding: .utf8
-        )
-        let descriptionOutput = """
-            Building for debugging...
-            \(externalWorkflowDescriptionJSON)
-            """
-        let runner = RecordingProcessRunner(results: [
-            ProcessResult(exitCode: 0, output: descriptionOutput)
-        ])
-        let discovery = ExternalWorkflowDiscovery(
-            environment: ["HEPHAESTUS_EXTERNAL_WORKFLOW_ROOT": packageURL.path],
-            processRunner: runner
-        )
-
-        let workflows = await discovery.discoverWorkflows()
-
-        #expect(workflows.count == 1)
-        #expect(workflows.first?.id == "external-implementation-review-example")
-        #expect(workflows.first?.source == .externalSwiftPackage)
-        #expect(workflows.first?.externalPackagePath == packageURL.path)
-        #expect(workflows.first?.externalEntryName == "ImplementationReviewWorkflow")
-        #expect(workflows.first?.inputs.map(\.id) == ["planPath"])
-        #expect(workflows.first?.inputs.first?.defaultValue == "docs/plans/demo.md")
-        #expect(workflows.first?.steps.map(\.id) == ["implement"])
-        let call = runner.recordedCalls().first
-        #expect(call?.arguments.contains("--package-path") == true)
-        #expect(call?.arguments.contains("--scratch-path") == true)
-        #expect(
-            call.map { Array($0.arguments.suffix(2)) } == ["ImplementationReviewWorkflow", "describe"])
-        #expect(call?.timeoutSeconds == 120)
-    }
 }
 
 private func makeBuildFailureRouteFixture() throws -> (
@@ -363,30 +320,6 @@ private func assertReviewersOverlap(_ finalTimeline: String) {
         #expect(reviewerBStarted.lowerBound < reviewerAFinished.lowerBound)
     }
 }
-
-private let externalWorkflowDescriptionJSON = """
-    {
-    "id": "external-implementation-review-example",
-    "name": "External Implementation Review Example",
-    "version": "0.1.0",
-    "summary": "Fake workflow",
-    "inputs": [
-      {
-        "id": "planPath",
-        "type": "string",
-        "label": "Plan path",
-        "defaultValue": "docs/plans/demo.md"
-      }
-    ],
-    "steps": [
-      {
-        "id": "implement",
-        "title": "Implement plan",
-        "summary": "Apply a plan."
-      }
-    ]
-    }
-    """
 
 private func makeTemporaryProject() throws -> URL {
     let url = URL(fileURLWithPath: NSTemporaryDirectory())

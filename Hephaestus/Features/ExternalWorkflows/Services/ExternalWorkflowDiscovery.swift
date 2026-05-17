@@ -19,6 +19,7 @@ struct ExternalWorkflowDiscovery {
         var workflows: [WorkflowDefinition] = []
         for root in workflowRoots {
             guard let manifest = loadManifest(packageURL: root),
+                await validate(manifest: manifest),
                 let description = await describe(manifest: manifest)
             else {
                 continue
@@ -74,22 +75,40 @@ struct ExternalWorkflowDiscovery {
 
     private func describe(manifest: ExternalWorkflowManifest) async -> WorkflowDescription? {
         guard manifest.runtime == "swift-package" else { return nil }
-        let result = await processRunner.run(
+        let result = await runPackageCommand(manifest: manifest, command: "describe")
+        guard result.exitCode == 0 else {
+            return nil
+        }
+        return decodeDescription(from: result.output)
+    }
+
+    private func validate(manifest: ExternalWorkflowManifest) async -> Bool {
+        guard manifest.runtime == "swift-package" else { return false }
+        let result = await runPackageCommand(manifest: manifest, command: "validate")
+        guard result.exitCode == 0,
+            let validation = decodeValidation(from: result.output)
+        else {
+            return false
+        }
+        return validation.status == "ok"
+    }
+
+    private func runPackageCommand(
+        manifest: ExternalWorkflowManifest,
+        command: String
+    ) async -> ProcessResult {
+        await processRunner.run(
             executable: URL(fileURLWithPath: "/usr/bin/swift"),
             arguments: [
                 "run",
                 "--package-path", manifest.packageURL.path,
                 "--scratch-path", SwiftPackageScratchPath.url(for: manifest.packageURL).path,
                 manifest.entry,
-                "describe",
+                command,
             ],
             currentDirectoryURL: manifest.packageURL,
             timeoutSeconds: 120
         )
-        guard result.exitCode == 0 else {
-            return nil
-        }
-        return decodeDescription(from: result.output)
     }
 
     private func decodeDescription(from output: String) -> WorkflowDescription? {
@@ -112,6 +131,26 @@ struct ExternalWorkflowDiscovery {
         return nil
     }
 
+    private func decodeValidation(from output: String) -> ExternalWorkflowValidation? {
+        if let start = output.firstIndex(of: "{") {
+            let jsonCandidate = String(output[start...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let data = jsonCandidate.data(using: .utf8),
+                let validation = try? JSONDecoder().decode(ExternalWorkflowValidation.self, from: data) {
+                return validation
+            }
+        }
+
+        for line in output.split(separator: "\n").reversed() {
+            let trimmed = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.hasPrefix("{"), let data = trimmed.data(using: .utf8) else { continue }
+            if let validation = try? JSONDecoder().decode(ExternalWorkflowValidation.self, from: data) {
+                return validation
+            }
+        }
+        return nil
+    }
+
     private func parseManifest(_ contents: String) -> [String: String] {
         var values: [String: String] = [:]
         for line in contents.split(separator: "\n") {
@@ -128,4 +167,8 @@ struct ExternalWorkflowDiscovery {
         }
         return values
     }
+}
+
+private struct ExternalWorkflowValidation: Decodable {
+    let status: String
 }
