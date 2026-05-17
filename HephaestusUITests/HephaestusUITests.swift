@@ -129,6 +129,7 @@ final class HephaestusUITests: XCTestCase {
                 in: app,
                 timeout: 10
             ))
+        try assertExternalFailureRawLog(in: app)
     }
 
     @MainActor
@@ -317,6 +318,43 @@ final class HephaestusUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.25))
         }
         return match.exists
+    }
+
+    private func debugLogDirectoryPath(in app: XCUIApplication, timeout: TimeInterval) -> String? {
+        let element = app.descendants(matching: .any)["workflow.debugLogPath"]
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let path = pathValue(from: element) {
+                return path
+            }
+            let scroll = app.scrollViews["workflow.contentScroll"]
+            if scroll.exists {
+                scroll.swipeUp()
+            } else if app.scrollViews.firstMatch.exists {
+                app.scrollViews.firstMatch.swipeUp()
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        return pathValue(from: element)
+    }
+
+    private func pathValue(from element: XCUIElement) -> String? {
+        if let value = element.value as? String, value.hasPrefix("/") {
+            return value
+        }
+        if element.label.hasPrefix("/") {
+            return element.label
+        }
+        return nil
+    }
+
+    private func assertExternalFailureRawLog(in app: XCUIApplication) throws {
+        let debugLogDirectory = try XCTUnwrap(debugLogDirectoryPath(in: app, timeout: 10))
+        let rawProcessLog = URL(fileURLWithPath: debugLogDirectory, isDirectory: true)
+            .appendingPathComponent("raw-process.log")
+        let rawProcessOutput = try String(contentsOf: rawProcessLog, encoding: .utf8)
+        XCTAssertTrue(rawProcessOutput.contains(#"{"type":"unknownEvent","summary":"bad event from example"}"#))
+        XCTAssertTrue(rawProcessOutput.contains("plain external process output before failure"))
     }
 
     private func workflowRunButton(in app: XCUIApplication, id: String, title: String) -> XCUIElement {

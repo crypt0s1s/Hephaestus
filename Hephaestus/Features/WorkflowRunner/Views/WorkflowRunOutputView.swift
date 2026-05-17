@@ -311,6 +311,9 @@ private struct DebugLogPath: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
+                .accessibilityLabel("Debug log path")
+                .accessibilityValue(debugLogURL.path)
+                .accessibilityIdentifier("workflow.debugLogPath")
         }
     }
 }
