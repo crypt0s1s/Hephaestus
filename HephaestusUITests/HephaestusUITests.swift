@@ -88,6 +88,50 @@ final class HephaestusUITests: XCTestCase {
     }
 
     @MainActor
+    func testExternalSwiftWorkflowFailureShowsMalformedOutputAndExitCode() throws {
+        let app = XCUIApplication()
+        let repoURL = try repositoryRootURL()
+        let externalWorkflowURL =
+            repoURL
+            .appendingPathComponent("ExampleWorkflows", isDirectory: true)
+            .appendingPathComponent("ImplementationReviewExample", isDirectory: true)
+
+        app.launchEnvironment["HEPHAESTUS_PROVIDER"] = "mock"
+        app.launchEnvironment["HEPHAESTUS_WORKFLOW_PROJECT_PATH"] = repoURL.path
+        app.launchEnvironment["HEPHAESTUS_EXTERNAL_WORKFLOW_ROOT"] = externalWorkflowURL.path
+        app.launch()
+        selectWorkflowsMode(in: app)
+
+        let workflowID = "external-implementation-review-example"
+        let runButton = workflowRunButton(
+            in: app,
+            id: workflowID,
+            title: "External Implementation Review Example"
+        )
+        XCTAssertTrue(runButton.waitForExistence(timeout: 90))
+
+        let scenarioField = app.textFields["workflow.input.\(workflowID).scenario"]
+        XCTAssertTrue(scenarioField.waitForExistence(timeout: 10))
+        scenarioField.click()
+        scenarioField.typeKey("a", modifierFlags: .command)
+        scenarioField.typeText("malformed-failure")
+
+        XCTAssertTrue(waitForEnabled(runButton, timeout: 10))
+        runButton.click()
+
+        XCTAssertTrue(
+            app.staticTexts["External Implementation Review Example failed with exit code 42."]
+                .waitForExistence(timeout: 120))
+        XCTAssertTrue(waitForElement(containing: "Ignored malformed external workflow event", in: app, timeout: 30))
+        XCTAssertTrue(
+            waitForElement(
+                containing: "plain external process output before failure",
+                in: app,
+                timeout: 10
+            ))
+    }
+
+    @MainActor
     func testPlanningReviewWorkflowStartsInteractiveWaitingState() throws {
         let app = XCUIApplication()
         let projectURL = try temporaryWorkflowProjectURL(named: "planning-waiting-state")
@@ -254,6 +298,25 @@ final class HephaestusUITests: XCTestCase {
         let predicate = NSPredicate(format: "enabled == true")
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func waitForElement(containing text: String, in app: XCUIApplication, timeout: TimeInterval) -> Bool {
+        let predicate = NSPredicate(format: "label CONTAINS %@", text)
+        let match = app.descendants(matching: .any).matching(predicate).firstMatch
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if match.exists {
+                return true
+            }
+            let scroll = app.scrollViews["workflow.contentScroll"]
+            if scroll.exists {
+                scroll.swipeUp()
+            } else if app.scrollViews.firstMatch.exists {
+                app.scrollViews.firstMatch.swipeUp()
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        return match.exists
     }
 
     private func workflowRunButton(in app: XCUIApplication, id: String, title: String) -> XCUIElement {

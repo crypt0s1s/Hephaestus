@@ -128,6 +128,34 @@ struct WorkflowTimelineProjectionTests {
         #expect(rows.allSatisfy { !$0.isExpandable && $0.depth == 0 })
     }
 
+    @Test
+    func stepRecordRowsKeepSupplementalExternalRuntimeOutputVisible() {
+        let rows = TimelineDisplayRowsBuilder(
+            timeline: """
+                External workflow started: Example - External workflow process started.
+                Ignored malformed external workflow event: {"type":"unknownEvent"}
+                plain external process output before failure
+                Build finished - Fake build failed.
+                External workflow finished: Example - External fake workflow failed.
+                """,
+            stepRecords: [
+                WorkflowStepRecord(
+                    id: "build",
+                    title: "Build",
+                    status: .failed,
+                    summary: "Fake build failed.",
+                    sortOrder: 0
+                )
+            ]
+        ).rows
+
+        #expect(rows.map(\.label).contains("Build"))
+        #expect(rows.map(\.label).contains("Ignored malformed external workflow event: {\"type\":\"unknownEvent\"}"))
+        #expect(rows.map(\.label).contains("plain external process output before failure"))
+        #expect(rows.map(\.label).contains("External workflow finished: Example - External fake workflow failed"))
+        #expect(rows.filter { $0.label == "Build" }.count == 1)
+    }
+
     private func record(
         _ id: String,
         _ title: String,

@@ -272,6 +272,7 @@ private struct WorkflowExpandedContent: View {
             )
         case .inputs:
             WorkflowInputsConfiguration(
+                workflowID: workflow.id,
                 inputs: workflow.inputs,
                 values: externalInputValues,
                 updateInput: updateExternalInput
@@ -281,6 +282,7 @@ private struct WorkflowExpandedContent: View {
 }
 
 private struct WorkflowInputsConfiguration: View {
+    let workflowID: WorkflowDefinition.ID
     let inputs: [WorkflowInputDefinition]
     let values: [String: String]
     let updateInput: (String, String) -> Void
@@ -294,7 +296,8 @@ private struct WorkflowInputsConfiguration: View {
                         get: { values[input.id] ?? input.defaultValue ?? "" },
                         set: { updateInput(input.id, $0) }
                     ),
-                    accessibilityLabel: input.label
+                    accessibilityLabel: input.label,
+                    accessibilityIdentifier: "workflow.input.\(workflowID).\(input.id)"
                 )
             }
         }
@@ -339,13 +342,15 @@ private struct WorkflowInputField: View {
     let placeholder: String
     @Binding var text: String
     let accessibilityLabel: String
+    var accessibilityIdentifier: String?
 
     var body: some View {
         AnvilTextField(
             text: $text,
             configuration: AnvilTextFieldConfiguration(
                 placeholder: placeholder,
-                accessibilityLabel: accessibilityLabel
+                accessibilityLabel: accessibilityLabel,
+                accessibilityIdentifier: accessibilityIdentifier
             )
         )
     }

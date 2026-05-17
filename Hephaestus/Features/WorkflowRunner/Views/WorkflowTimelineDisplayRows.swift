@@ -14,7 +14,7 @@ struct TimelineDisplayRowsBuilder {
 
     var rows: [TimelineDisplayRow] {
         if !stepRecords.isEmpty {
-            return stepRecordRows
+            return stepRecordRows + timelineSupplementRows
         }
         return parsedTimelineRows
     }
@@ -30,6 +30,25 @@ struct TimelineDisplayRowsBuilder {
                 record: record
             )
         }
+    }
+
+    private var timelineSupplementRows: [TimelineDisplayRow] {
+        guard !timeline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+        let recordTitles = stepRecords.map { $0.title.lowercased() }
+        let maxStepSortOrder = stepRecords.map(\.sortOrder).max() ?? 0
+        return parsedTimelineRows
+            .filter { shouldIncludeSupplementalTimelineRow($0, recordTitles: recordTitles) }
+            .enumerated()
+            .map { index, row in
+                TimelineDisplayRow(
+                    id: row.id,
+                    label: row.label,
+                    detail: row.detail,
+                    status: row.status,
+                    sortOrder: maxStepSortOrder + index + 1,
+                    record: row.record
+                )
+            }
     }
 
     private var parsedTimelineRows: [TimelineDisplayRow] {
@@ -51,6 +70,16 @@ struct TimelineDisplayRowsBuilder {
             .filter { !$0.isEmpty }
         return events.isEmpty
             ? ["No orchestration updates were produced. Open full logs for details."] : events
+    }
+
+    private func shouldIncludeSupplementalTimelineRow(
+        _ row: TimelineDisplayRow,
+        recordTitles: [String]
+    ) -> Bool {
+        let label = row.label.lowercased()
+        return !recordTitles.contains { title in
+            label == title || label.contains(" - \(title)") || label.hasPrefix("\(title) ")
+        }
     }
 
     private func merge(
