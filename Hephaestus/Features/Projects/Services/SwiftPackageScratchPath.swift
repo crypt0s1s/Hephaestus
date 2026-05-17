@@ -1,7 +1,7 @@
 import Foundation
 
 enum SwiftPackageScratchPath {
-    static func url(for packageURL: URL) -> URL {
+    nonisolated static func url(for packageURL: URL) -> URL {
         let sanitizedPath = packageURL.path
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: ":", with: "_")

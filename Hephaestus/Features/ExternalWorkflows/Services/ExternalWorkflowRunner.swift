@@ -1,6 +1,24 @@
 import Foundation
 
 struct ExternalWorkflowRunner {
+    private let timeoutSeconds: Int
+    private let processFactory: (String, String, URL) -> Process
+
+    init(
+        timeoutSeconds: Int = 120,
+        processFactory: @escaping (String, String, URL) -> Process = ExternalWorkflowRunner.makeDefaultProcess
+    ) {
+        self.timeoutSeconds = timeoutSeconds
+        self.processFactory = processFactory
+    }
+
+    init(
+        environment: [String: String],
+        processFactory: @escaping (String, String, URL) -> Process = ExternalWorkflowRunner.makeDefaultProcess
+    ) {
+        self.init(timeoutSeconds: Self.timeoutSeconds(from: environment), processFactory: processFactory)
+    }
+
     func run(
         workflow: WorkflowDefinition,
         project: WorkflowProject,
@@ -40,7 +58,8 @@ struct ExternalWorkflowRunner {
             inputURL: inputURL,
             debugLog: debugLog,
             recorder: recorder,
-            progress: progress
+            progress: progress,
+            timeoutSeconds: timeoutSeconds
         )
 
         try? FileManager.default.removeItem(at: inputURL)
@@ -61,10 +80,11 @@ struct ExternalWorkflowRunner {
         inputURL: URL,
         debugLog: WorkflowDebugLog,
         recorder: ExternalWorkflowProgressRecorder,
-        progress: WorkflowProgressHandler?
+        progress: WorkflowProgressHandler?,
+        timeoutSeconds: Int
     ) async -> ProcessResult {
         await withCheckedContinuation { continuation in
-            let process = makeProcess(packagePath: packagePath, entry: entry, inputURL: inputURL)
+            let process = processFactory(packagePath, entry, inputURL)
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = pipe
@@ -74,6 +94,7 @@ struct ExternalWorkflowRunner {
                 debugLog: debugLog,
                 recorder: recorder,
                 progress: progress,
+                timeoutSeconds: timeoutSeconds,
                 continuation: continuation
             )
 
@@ -91,7 +112,7 @@ struct ExternalWorkflowRunner {
             do {
                 try process.run()
                 Task {
-                    try? await Task.sleep(for: .seconds(120))
+                    try? await Task.sleep(for: .seconds(timeoutSeconds))
                     state.timeout()
                 }
             } catch {
@@ -100,7 +121,11 @@ struct ExternalWorkflowRunner {
         }
     }
 
-    private func makeProcess(packagePath: String, entry: String, inputURL: URL) -> Process {
+    private nonisolated static func makeDefaultProcess(
+        packagePath: String,
+        entry: String,
+        inputURL: URL
+    ) -> Process {
         let packageURL = URL(fileURLWithPath: packagePath, isDirectory: true)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/swift")
@@ -114,6 +139,16 @@ struct ExternalWorkflowRunner {
         ]
         process.currentDirectoryURL = packageURL
         return process
+    }
+
+    private nonisolated static func timeoutSeconds(from environment: [String: String]) -> Int {
+        guard let rawValue = environment["HEPHAESTUS_EXTERNAL_WORKFLOW_TIMEOUT_SECONDS"],
+            let timeoutSeconds = Int(rawValue),
+            timeoutSeconds > 0
+        else {
+            return 120
+        }
+        return timeoutSeconds
     }
 }
 
@@ -212,6 +247,7 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
     private let debugLog: WorkflowDebugLog
     private let recorder: ExternalWorkflowProgressRecorder
     private let progress: WorkflowProgressHandler?
+    private let timeoutSeconds: Int
     private let continuation: CheckedContinuation<ProcessResult, Never>
     private let lineInterpreter = ExternalWorkflowEventLineInterpreter()
     private let lock = NSLock()
@@ -225,6 +261,7 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
         debugLog: WorkflowDebugLog,
         recorder: ExternalWorkflowProgressRecorder,
         progress: WorkflowProgressHandler?,
+        timeoutSeconds: Int,
         continuation: CheckedContinuation<ProcessResult, Never>
     ) {
         self.process = process
@@ -232,6 +269,7 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
         self.debugLog = debugLog
         self.recorder = recorder
         self.progress = progress
+        self.timeoutSeconds = timeoutSeconds
         self.continuation = continuation
     }
 
@@ -256,7 +294,11 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
         }
     }
 
-    func finish(exitCode: Int32, errorOutput: String? = nil) {
+    func finish(
+        exitCode: Int32,
+        errorOutput: String? = nil,
+        failureEvent: ExternalWorkflowEvent? = nil
+    ) {
         let result: ProcessResult? = lock.withLock {
             guard !didResume else { return nil }
             didResume = true
@@ -269,9 +311,13 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
 
         if let result {
             Task {
+                if let errorOutput {
+                    await debugLog.append(errorOutput)
+                    await debugLog.append(errorOutput, to: "raw-process.log")
+                }
                 await replayEventLines(from: result.output)
                 if result.exitCode != 0 {
-                    await recorder.record(.processExitFailure(exitCode: result.exitCode))
+                    await recorder.record(failureEvent ?? .processExitFailure(exitCode: result.exitCode))
                 }
                 let finalProgress = await recorder.progress
                 continuation.resume(
@@ -291,7 +337,8 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
             guard !didResume, process.isRunning else { return }
             process.terminate()
         }
-        finish(exitCode: 124, errorOutput: "\nExternal workflow timed out after 120 seconds.")
+        let message = "\nExternal workflow timed out after \(timeoutSeconds) seconds."
+        finish(exitCode: 124, errorOutput: message, failureEvent: .processTimeout(seconds: timeoutSeconds))
     }
 
     private func replayEventLines(from output: String) async {

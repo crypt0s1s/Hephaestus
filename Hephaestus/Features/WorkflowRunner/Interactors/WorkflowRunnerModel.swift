@@ -29,7 +29,7 @@ final class WorkflowRunnerModel: ObservableObject {
                 interactiveSessionStore: interactiveSessionStore
             ),
             externalWorkflowDiscovery: ExternalWorkflowDiscovery(),
-            externalWorkflowRunner: ExternalWorkflowRunner(),
+            externalWorkflowRunner: ExternalWorkflowRunner(environment: environment),
             interactiveSessionStore: interactiveSessionStore,
             environment: environment
         )

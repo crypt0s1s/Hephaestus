@@ -53,6 +53,18 @@ extension ExternalWorkflowEvent {
         )
     }
 
+    nonisolated static func processTimeout(seconds: Int) -> ExternalWorkflowEvent {
+        ExternalWorkflowEvent(
+            type: .workflowFinished,
+            stepID: nil,
+            title: "External Swift workflow",
+            status: .failed,
+            summary: "External workflow timed out after \(seconds) seconds.",
+            inputPreview: nil,
+            outputPreview: nil
+        )
+    }
+
     private nonisolated static func preview(_ line: String) -> String {
         let limit = 160
         guard line.count > limit else { return line }
