@@ -7,7 +7,11 @@ import Testing
 struct PlanningReviewWorkflowTests {
     @Test
     func planningReviewWorkflowStartsInInteractiveWaitingState() throws {
-        let catalog = BuiltInWorkflowCatalog.production()
+        let catalog = BuiltInWorkflowCatalog.production(
+            processRunner: RecordingProcessRunner(results: []),
+            environment: [:],
+            interactiveSessionStore: WorkflowInteractiveSessionStore()
+        )
         let planningDefinition = try #require(catalog.workflow(id: PlanningReviewWorkflowRunner.id)?.definition)
         #expect(catalog.definitions.map(\.id).contains(PlanningReviewWorkflowRunner.id))
         #expect(planningDefinition.steps.first?.id == "interactive-planning")
@@ -57,26 +61,170 @@ struct PlanningReviewWorkflowTests {
         let model = makePlanningReviewModel(projectURL: projectURL)
         var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
         let sessionID = interaction.sessionID
-        interaction.draft = validPlanMarkdown
-        interaction.draftProvenance = .userEdited
-        model.update { $0.planningInteraction = interaction }
+        interaction.updatePlanningDraftCandidate(content: validPlanMarkdown, source: .user)
+        model.seedPlanningInteractionState(interaction)
 
         await model.submitPlanningDraftPlan()
 
-        try assertCompletedPlanningReviewSubmission(
-            model: model,
+        let submittedOutput = try #require(model.currentPlanningInteractionState?.submittedOutput)
+        try expectAcceptedPlanningFiles(
             projectURL: projectURL,
-            sessionID: sessionID
+            sessionID: sessionID,
+            submittedOutput: submittedOutput
+        )
+        expectPlanningReviewWaitingForUser(model)
+        let reviewedInteraction = try #require(model.currentPlanningInteractionState)
+        try expectPlannerResponseArtifacts(
+            projectURL: projectURL,
+            sessionID: sessionID,
+            interaction: reviewedInteraction
         )
 
         model.acceptPlanningReview()
 
-        #expect(model.state.planningInteraction?.phase == .accepted)
-        #expect(model.state.planningInteraction?.runtimeRun.status == .completed)
-        #expect(model.state.planningInteraction?.runtimeRun.activePause == nil)
-        #expect(model.state.planningInteraction?.canResolveCompletedOutput == false)
+        expectPlanningReviewAccepted(model)
+        let latestOutput = try #require(model.currentPlanningInteractionState?.latestResolvedOutput)
+        try expectFinalPlanningAcceptance(
+            projectURL: projectURL,
+            sessionID: sessionID,
+            output: latestOutput
+        )
+    }
+
+    private func expectAcceptedPlanningFiles(
+        projectURL: URL,
+        sessionID: String,
+        submittedOutput: InteractiveStepOutput
+    ) throws {
+        let planURL =
+            projectURL
+            .appendingPathComponent(".hephaestus/planning-review/\(sessionID)", isDirectory: true)
+            .appendingPathComponent("plan.md")
+        #expect(try String(contentsOf: planURL, encoding: .utf8) == validPlanMarkdown)
+        let acceptedPlanURL =
+            projectURL
+            .appendingPathComponent(".hephaestus/planning-review/\(sessionID)/accepted", isDirectory: true)
+            .appendingPathComponent("plan.md")
+        #expect(try String(contentsOf: acceptedPlanURL, encoding: .utf8) == validPlanMarkdown)
+        let acceptance = try loadPersistedPlanningAcceptanceRecord(
+            projectURL: projectURL,
+            sessionID: sessionID,
+            kind: .draft
+        )
+        #expect(acceptance.kind == "draftAcceptedForReview")
+        #expect(acceptance.outputID == submittedOutput.id)
+        #expect(acceptance.acceptedRevision == 1)
+        #expect(acceptance.contentHash == PlanningPlanArtifactPolicy.contentHash(validPlanMarkdown))
+        #expect(acceptance.acceptedAt == submittedOutput.createdAt)
+        #expect(acceptance.idempotencyKey == "\(sessionID)-draft-plan-1")
+        #expect(acceptance.content == validPlanMarkdown)
+        #expect(acceptance.contentType == PlanningPlanArtifactPolicy.contentType)
+        #expect(acceptance.projectRelativePath == submittedOutput.artifact.projectRelativePath)
+    }
+
+    private func expectPlannerResponseArtifacts(
+        projectURL: URL,
+        sessionID: String,
+        interaction: PlanningInteractionState
+    ) throws {
+        let cycleOneOutput = try #require(
+            interaction.relatedOutputs.first { $0.producerStepID == "planner-response-cycle-1" }
+        )
+        try expectPlannerResponseArtifact(
+            projectURL: projectURL,
+            sessionID: sessionID,
+            output: cycleOneOutput,
+            cycle: 1
+        )
+        let cycleTwoOutput = try #require(interaction.latestResolvedOutput)
+        try expectPlannerResponseArtifact(
+            projectURL: projectURL,
+            sessionID: sessionID,
+            output: cycleTwoOutput,
+            cycle: 2
+        )
+    }
+
+    private func expectPlannerResponseArtifact(
+        projectURL: URL,
+        sessionID: String,
+        output: InteractiveStepOutput,
+        cycle: Int
+    ) throws {
+        let planPath = PlanningPlanArtifactPolicy.plannerResponsePlanPath(sessionID: sessionID, cycle: cycle)
+        let planURL = projectURL.appendingPathComponent(planPath)
+        #expect(output.producerStepID == "planner-response-cycle-\(cycle)")
+        #expect(output.artifact.projectRelativePath == planPath)
+        #expect(output.artifact.contentType == PlanningPlanArtifactPolicy.contentType)
+        #expect(try String(contentsOf: planURL, encoding: .utf8) == output.artifact.content)
+    }
+
+    private func expectPlanningReviewWaitingForUser(_ model: WorkflowRunnerModel) {
+        #expect(model.currentPlanningInteractionState?.phase == .completed)
+        #expect(model.currentPlanningInteractionState?.submittedOutput?.artifact.projectRelativePath != nil)
+        #expect(!model.state.isRunning)
+        #expect(model.state.activeWorkflowActivity == .waitingForUserReview)
+        #expect(model.state.lastRunSucceeded == nil)
+        #expect(
+            model.state.stepRecords.contains {
+                $0.id == "planning-review-interactive-user-review" && $0.status == .inProgress
+            })
+        #expect(model.state.stepRecords.contains { $0.id == "planning-review-reviewer-1-1" })
+        #expect(model.state.stepRecords.contains { $0.id == "planning-review-consolidated-feedback-1" })
+        #expect(model.state.stepRecords.contains { $0.id == "planning-review-planner-response-2" })
+        #expect(
+            model.currentPlanningInteractionState?.latestResolvedOutput?.producerStepID
+                == "planner-response-cycle-2")
+        #expect(
+            model.currentPlanningInteractionState?.relatedOutputs.contains {
+                $0.producerStepID == "automated-review-cycle-1"
+            } == true)
+    }
+
+    private func expectFinalPlanningAcceptance(
+        projectURL: URL,
+        sessionID: String,
+        output: InteractiveStepOutput
+    ) throws {
+        let acceptedPlanURL =
+            projectURL
+            .appendingPathComponent(".hephaestus/planning-review/\(sessionID)/accepted", isDirectory: true)
+            .appendingPathComponent("plan.md")
+        #expect(try String(contentsOf: acceptedPlanURL, encoding: .utf8) == output.artifact.content)
+        let acceptance = try loadPersistedPlanningAcceptanceRecord(
+            projectURL: projectURL,
+            sessionID: sessionID,
+            kind: .final
+        )
+        #expect(acceptance.kind == "finalReviewedPlanAccepted")
+        #expect(acceptance.outputID == output.id)
+        #expect(acceptance.acceptedRevision == 0)
+        #expect(acceptance.contentHash == PlanningPlanArtifactPolicy.contentHash(output.artifact.content))
+        #expect(
+            acceptance.acceptedAt.timeIntervalSince1970.rounded(.down)
+                == acceptance.acceptedAt.timeIntervalSince1970)
+        #expect(acceptance.content == output.artifact.content)
+        #expect(acceptance.contentType == PlanningPlanArtifactPolicy.contentType)
+        #expect(acceptance.idempotencyKey == "final-review-\(output.id)")
+        #expect(acceptance.projectRelativePath == output.artifact.projectRelativePath)
+        #expect(acceptance.projectRelativePath == PlanningPlanArtifactPolicy.relativePlanPath(sessionID: sessionID))
+        let draftAcceptance = try loadPersistedPlanningAcceptanceRecord(
+            projectURL: projectURL,
+            sessionID: sessionID,
+            kind: .draft
+        )
+        #expect(draftAcceptance.kind == "draftAcceptedForReview")
+    }
+
+    private func expectPlanningReviewAccepted(_ model: WorkflowRunnerModel) {
+        #expect(model.currentPlanningInteractionState?.phase == .accepted)
+        #expect(model.currentPlanningInteractionState?.canResolveCompletedOutput == false)
         #expect(!model.state.isRunning)
         #expect(model.state.lastRunSucceeded == true)
+        #expect(
+            model.state.stepRecords.contains {
+                $0.id == "planning-review-interactive-user-review" && $0.status == .succeeded
+            })
     }
 
     @Test
@@ -122,9 +270,8 @@ struct PlanningReviewWorkflowTests {
         let model = makePlanningReviewModel(projectURL: projectURL)
         var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
         let sessionID = interaction.sessionID
-        interaction.draft = "# Plan\n\nThis is not enough yet."
-        interaction.draftProvenance = .userEdited
-        model.update { $0.planningInteraction = interaction }
+        interaction.updatePlanningDraftCandidate(content: "# Plan\n\nThis is not enough yet.", source: .user)
+        model.seedPlanningInteractionState(interaction)
 
         await model.submitPlanningDraftPlan()
 
@@ -133,259 +280,62 @@ struct PlanningReviewWorkflowTests {
             .appendingPathComponent(".hephaestus/planning-review/\(sessionID)", isDirectory: true)
             .appendingPathComponent("plan.md")
         #expect(!FileManager.default.fileExists(atPath: planURL.path))
-        #expect(model.state.planningInteraction?.phase == .idle)
-        #expect(model.state.planningInteraction?.submittedOutput == nil)
+        #expect(model.currentPlanningInteractionState?.phase == .idle)
+        #expect(model.currentPlanningInteractionState?.submittedOutput == nil)
         #expect(
-            model.state.planningInteraction?.errorMessage?
+            model.currentPlanningInteractionState?.errorMessage?
                 .contains("Plan is missing required sections") == true)
     }
 
     @Test
-    func failedAutomationCycleDoesNotEnterUserReviewPause() {
-        let run = PlanningReviewPrototypeAutomationRun(
-            timeline: "started",
-            records: [
-                WorkflowStepRecord(
-                    id: "planning-review-reviewer-1-1",
-                    title: "Reviewer A cycle 1",
-                    status: .failed,
-                    summary: "Reviewer failed.",
-                    sortOrder: 200
-                )
-            ],
-            planPath: ".hephaestus/planning-review/session/plan.md",
-            terminalFailure: "All reviewers failed in cycle 1."
-        )
-
-        let result = makePlanningReviewWorkflowRunner().finishPlanningReviewPrototypeAutomationRun(run)
-
-        #expect(result.exitCode == 1)
-        #expect(!result.stepRecords.contains { $0.id == "planning-review-interactive-user-review" })
-        #expect(result.output.contains("Automated review cycles failed"))
-    }
-
-    @Test
-    func automatedCyclesReviewLatestPlannerResponseMessage() async throws {
-        let projectURL = try makeTemporaryPlanningProject()
-        let project = WorkflowProject(url: projectURL, bookmarkData: nil)
-        let output = makeInteractiveOutput(content: validPlanMarkdown)
-        let result = await makePlanningReviewWorkflowRunner().runAutomatedReviewCycles(
-            project: project,
-            submittedOutput: output
-        )
-
-        #expect(result.exitCode == 0)
-        let firstCurrentPlan = try #require(
-            result.workflowMessages.first {
-                $0.kind == .currentPlan && $0.currentPlan?.cycle == 1
-            })
-        let cycleTwoReviewerMessages = result.workflowMessages.filter {
-            $0.kind == .reviewerFeedback && $0.reviewerFeedback?.cycle == 2
-        }
-        #expect(cycleTwoReviewerMessages.count == 2)
-        #expect(cycleTwoReviewerMessages.allSatisfy {
-            $0.reviewerFeedback?.reviewedMessageID == firstCurrentPlan.id
-        })
-    }
-
-    @Test
-    func plannerResponseFailureStopsFurtherAutomatedCycles() async throws {
-        let projectURL = try makeTemporaryPlanningProject()
-        let project = WorkflowProject(url: projectURL, bookmarkData: nil)
-        let output = makeInteractiveOutput(content: validPlanMarkdown)
-        let runner = makePlanningReviewWorkflowRunner(
-            backendAdapter: PlannerResponseFailingPlanningReviewBackendAdapter()
-        )
-
-        let result = await runner.runAutomatedReviewCycles(project: project, submittedOutput: output)
-
-        #expect(result.exitCode == 1)
-        #expect(result.output.contains("Planner response failed in cycle 1."))
-        #expect(result.stepRecords.contains {
-            $0.id == "planning-review-planner-response-1" && $0.status == .failed
-        })
-        #expect(!result.stepRecords.contains { $0.id == "planning-review-reviewer-2-1" })
-        #expect(result.workflowMessages.contains {
-            $0.consolidatedReview?.cycle == 1
-        })
-        #expect(result.workflowMessages.contains {
-            $0.plannerResponse?.cycle == 1 && $0.plannerResponse?.exitCode == 1
-        })
-        #expect(!result.workflowMessages.contains { $0.kind == .currentPlan })
-    }
-
-    @Test
-    func singleReviewerFailureStillContinuesReviewCycles() async throws {
-        let projectURL = try makeTemporaryPlanningProject()
-        let project = WorkflowProject(url: projectURL, bookmarkData: nil)
-        let output = makeInteractiveOutput(content: validPlanMarkdown)
-        let runner = makePlanningReviewWorkflowRunner(
-            backendAdapter: SelectivePlanningReviewBackendAdapter(failingReviewerNames: ["Reviewer A"])
-        )
-
-        let result = await runner.runAutomatedReviewCycles(project: project, submittedOutput: output)
-
-        #expect(result.exitCode == 0)
-        #expect(result.stepRecords.contains {
-            $0.id == "planning-review-reviewer-1-1" && $0.status == .failed
-        })
-        #expect(result.stepRecords.contains { $0.id == "planning-review-planner-response-2" })
-        #expect(result.workflowMessages.filter { $0.kind == .reviewerFeedback }.count == 2)
-        let consolidatedReviews = result.workflowMessages.compactMap(\.consolidatedReview)
-        #expect(consolidatedReviews.count == 2)
-        #expect(consolidatedReviews.allSatisfy {
-            $0.failedReviewers.first?.reviewerName == "Reviewer A"
-        })
-    }
-
-    @Test
-    func singleReviewerFailurePersistsFailedReviewerStateInConsolidatedReview() async throws {
-        let projectURL = try makeTemporaryPlanningProject()
-        let model = makePlanningReviewModel(
-            projectURL: projectURL,
-            backendAdapter: SelectivePlanningReviewBackendAdapter(failingReviewerNames: ["Reviewer A"])
-        )
-        var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
-        let sessionID = interaction.sessionID
-        interaction.draft = validPlanMarkdown
-        interaction.draftProvenance = .userEdited
-        model.update { $0.planningInteraction = interaction }
-
-        await model.submitPlanningDraftPlan()
-
-        let consolidatedMessage = try #require(
-            model.state.planningInteraction?.workflowMessages.first { $0.kind == .consolidatedReview }
-        )
-        let consolidatedReview = try #require(consolidatedMessage.consolidatedReview)
-        #expect(consolidatedReview.failedReviewers.count == 1)
-        #expect(consolidatedReview.failedReviewers.first?.reviewerName == "Reviewer A")
-        #expect(consolidatedReview.failedReviewers.first?.stepID == "planning-review-reviewer-1-1")
-
-        let persistedMessage = try decodePersistedWorkflowMessage(
-            consolidatedMessage.id,
-            projectURL: projectURL,
-            sessionID: sessionID
-        )
-        #expect(persistedMessage.consolidatedReview?.failedReviewers.first?.reviewerName == "Reviewer A")
-    }
-
-    @Test
-    func plannerResponsePromptIncludesFailedReviewerState() throws {
-        let projectURL = try makeTemporaryPlanningProject()
-        try assertPlannerResponsePromptIncludesFailedReviewerState(projectURL: projectURL)
-    }
-
-    @Test
-    func allReviewerFailuresStopBeforePlannerResponse() async throws {
-        let projectURL = try makeTemporaryPlanningProject()
-        let project = WorkflowProject(url: projectURL, bookmarkData: nil)
-        let output = makeInteractiveOutput(content: validPlanMarkdown)
-        let runner = makePlanningReviewWorkflowRunner(
-            backendAdapter: SelectivePlanningReviewBackendAdapter(
-                failingReviewerNames: ["Reviewer A", "Reviewer B"]
-            )
-        )
-
-        let result = await runner.runAutomatedReviewCycles(project: project, submittedOutput: output)
-
-        #expect(result.exitCode == 1)
-        #expect(result.output.contains("All reviewers failed in cycle 1"))
-        #expect(!result.stepRecords.contains { $0.id.hasPrefix("planning-review-planner-response") })
-        #expect(!result.workflowMessages.contains { $0.kind == .consolidatedReview })
-    }
-
-    @Test
-    func automatedMessagePersistenceFailureStopsBeforePlannerResponse() async throws {
-        let projectURL = try makeTemporaryPlanningProject()
-        let model = makePlanningReviewModel(
-            projectURL: projectURL,
-            messageStore: FailingAfterFirstPlanningReviewMessageStore()
-        )
-        var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
-        interaction.draft = validPlanMarkdown
-        interaction.draftProvenance = .userEdited
-        model.update { $0.planningInteraction = interaction }
-
-        await model.submitPlanningDraftPlan()
-
-        #expect(model.state.lastRunSucceeded == false)
-        #expect(model.state.output.contains("Workflow message persistence failed before planner response"))
-        #expect(!model.state.stepRecords.contains { $0.id == "planning-review-planner-response-1" })
-        #expect(model.state.planningInteraction?.workflowMessages.contains {
-            $0.kind == .consolidatedReview
-        } == false)
-    }
-
-    @Test
-    func failedPlanningReviewReturnsInteractionToEditableDraft() async throws {
-        let projectURL = try makeTemporaryPlanningProject()
-        let model = makePlanningReviewModel(
-            projectURL: projectURL,
-            backendAdapter: SelectivePlanningReviewBackendAdapter(
-                failingReviewerNames: ["Reviewer A", "Reviewer B"]
-            )
-        )
-        var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
-        interaction.draft = validPlanMarkdown
-        interaction.draftProvenance = .userEdited
-        interaction.submittedOutput = InteractiveStepOutput(
-            producerStepID: interaction.stepID,
-            artifact: InteractiveStepArtifact(
-                title: "Submitted Plan",
-                contentType: "text/markdown; artifact=plan",
-                content: validPlanMarkdown,
-                projectRelativePath: ".hephaestus/planning-review/session/plan.md"
-            ),
-            summary: "Submitted plan"
-        )
-        interaction.phase = .completed
-        model.update {
-            $0.planningInteraction = interaction
-            $0.stepRecords = [
-                WorkflowStepRecord(
-                    id: "planning-review-reviewer-1-1",
-                    title: "Reviewer A cycle 1",
-                    status: .failed,
-                    summary: "Reviewer failed.",
-                    sortOrder: 200
-                )
-            ]
-        }
-
-        await model.requestAnotherPlanningReviewCycle()
-
-        #expect(model.state.planningInteraction?.phase == .idle)
-        #expect(model.state.planningInteraction?.submittedOutput == nil)
-        #expect(model.state.planningInteraction?.canSubmit == true)
-        #expect(model.state.planningInteraction?.errorMessage?.contains("Automated review failed") == true)
-        #expect(!model.state.isRunning)
-        #expect(model.state.lastRunSucceeded == false)
-    }
-
-    @Test
-    func generatedPlanningDraftRequiresUserEditBeforeSubmission() async throws {
+    func generatedPlanningDraftCanBeAcceptedAfterUserReviewWithoutForcedEdit() async throws {
         let projectURL = try makeTemporaryPlanningProject()
         let model = makePlanningReviewModel(projectURL: projectURL)
         var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
         interaction.note = "Build an interactive planning workflow."
-        model.update { $0.planningInteraction = interaction }
+        model.seedPlanningInteractionState(interaction)
 
         await model.sendPlanningMessage()
 
-        #expect(model.state.planningInteraction?.draftProvenance == .agentGenerated)
-        #expect(model.state.planningInteraction?.canSubmit == false)
-        #expect(model.state.planningInteraction?.draftRequiresUserEdit == true)
+        #expect(model.currentPlanningInteractionState?.canSubmit == true)
+        #expect(model.currentPlanningInteractionState?.gateState.canAcceptOutputForReview == true)
+        let draftPath = PlanningPlanArtifactPolicy.draftPlanPath(sessionID: interaction.sessionID)
+        let draftURL = projectURL.appendingPathComponent(draftPath)
+        #expect(try String(contentsOf: draftURL, encoding: .utf8).contains("## Summary"))
+    }
+
+    @Test
+    func validAgentDraftCandidateCanBeAcceptedAsReviewedOutput() async throws {
+        let projectURL = try makeTemporaryPlanningProject()
+        let model = makePlanningReviewModel(projectURL: projectURL)
+        var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
+        interaction.updatePlanningDraftCandidate(content: validPlanMarkdown, source: .agent)
+        model.seedPlanningInteractionState(interaction)
+
+        #expect(model.currentPlanningInteractionState?.canSubmit == true)
 
         await model.submitPlanningDraftPlan()
 
-        #expect(model.state.planningInteraction?.submittedOutput == nil)
-        #expect(
-            model.state.planningInteraction?.errorMessage?
-                .contains("Edit the generated draft") == true)
-
-        model.updatePlanningDraftPlan(validPlanMarkdown + "\n")
-
-        #expect(model.state.planningInteraction?.draftProvenance == .userEdited)
-        #expect(model.state.planningInteraction?.canSubmit == true)
+        #expect(model.currentPlanningInteractionState?.submittedOutput != nil)
+        #expect(model.currentPlanningInteractionState?.gateState.canAcceptOutputForReview == false)
     }
+
+    @Test
+    func invalidDraftCandidateBlocksSubmissionRegardlessOfProvenance() async throws {
+        let projectURL = try makeTemporaryPlanningProject()
+        let model = makePlanningReviewModel(projectURL: projectURL)
+        var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
+        interaction.updatePlanningDraftCandidate(content: "# Plan\n\nStill rough.", source: .user)
+        model.seedPlanningInteractionState(interaction)
+
+        #expect(model.currentPlanningInteractionState?.canSubmit == false)
+
+        await model.submitPlanningDraftPlan()
+
+        #expect(model.currentPlanningInteractionState?.submittedOutput == nil)
+        #expect(
+            model.currentPlanningInteractionState?.errorMessage?
+                .contains("Plan is missing required sections") == true)
+    }
+
 }

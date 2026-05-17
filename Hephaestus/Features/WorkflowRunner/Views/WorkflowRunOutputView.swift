@@ -209,10 +209,9 @@ private struct TimelineList: View {
     let rows: [TimelineDisplayRow]
     let selectedStepID: WorkflowStepRecord.ID?
     let performRowAction: (TimelineDisplayRow) -> Void
-    @Environment(\.anvilTheme) private var theme
 
     var body: some View {
-        VStack(spacing: 0) {
+        AnvilList(configuration: AnvilListConfiguration(style: .elevated)) {
             ForEach(rows) { row in
                 TimelineListItem(
                     row: row,
@@ -221,12 +220,6 @@ private struct TimelineList: View {
                     performRowAction: performRowAction
                 )
             }
-        }
-        .background(theme.colors.elevatedPanelBackground)
-        .clipShape(RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: theme.radii.medium, style: .continuous)
-                .stroke(theme.colors.border, lineWidth: 1)
         }
     }
 }

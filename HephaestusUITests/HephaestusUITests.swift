@@ -155,10 +155,7 @@ final class HephaestusUITests: XCTestCase {
         messageInput.typeText("Build the interactive planning phase")
         app.buttons["planning.sendButton"].click()
 
-        let draftPlan = planningDraftPlan(in: app)
-        XCTAssertTrue(draftPlan.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["Edit the generated draft before submitting it to the workflow."].exists)
-        editPlanningDraftForReview(draftPlan)
+        reviewGeneratedDraft(in: app)
 
         let submitButton = app.buttons["planning.submitPlan"]
         XCTAssertTrue(waitForEnabled(submitButton, timeout: 20))
@@ -169,6 +166,11 @@ final class HephaestusUITests: XCTestCase {
         XCTAssertTrue(app.buttons["planning.continuePlanning"].waitForExistence(timeout: 10))
         XCTAssertTrue(
             app.staticTexts["Interactive user review"]
+                .waitForExistence(timeout: 10))
+        assertPlanningReviewHandoffSummary(in: app)
+        tapPlanningAccept(in: app)
+        XCTAssertTrue(
+            app.staticTexts["Planning review workflow accepted."]
                 .waitForExistence(timeout: 10))
     }
 
@@ -211,9 +213,35 @@ final class HephaestusUITests: XCTestCase {
         return app.descendants(matching: .any)["planning.draftPlan"]
     }
 
-    private func editPlanningDraftForReview(_ draftPlan: XCUIElement) {
+    private func reviewGeneratedDraft(in app: XCUIApplication) {
+        XCTAssertTrue(app.staticTexts["planning.awaitingUserReview"].waitForExistence(timeout: 30))
+        let draftPlan = planningDraftPlan(in: app)
+        XCTAssertTrue(draftPlan.waitForExistence(timeout: 10))
         draftPlan.click()
-        draftPlan.typeText("\n\nReviewed in UI test.")
+        app.typeText("\n\nReviewed by the UI test.")
+    }
+
+    private func assertPlanningReviewHandoffSummary(in app: XCUIApplication) {
+        XCTAssertTrue(
+            app.descendants(matching: .any)["planning.reviewSummary"]
+                .waitForExistence(timeout: 10)
+        )
+    }
+
+    private func tapPlanningAccept(in app: XCUIApplication) {
+        let acceptButton = app.buttons["planning.acceptPlan"]
+        if !acceptButton.exists {
+            let workflowScroll = app.scrollViews["workflow.contentScroll"]
+            for _ in 0..<6 where !acceptButton.exists {
+                if workflowScroll.exists {
+                    workflowScroll.swipeDown()
+                } else {
+                    app.scrollViews.firstMatch.swipeDown()
+                }
+            }
+        }
+        XCTAssertTrue(acceptButton.waitForExistence(timeout: 10))
+        acceptButton.click()
     }
 
     private func scrollToPlanningInteraction(in app: XCUIApplication) {

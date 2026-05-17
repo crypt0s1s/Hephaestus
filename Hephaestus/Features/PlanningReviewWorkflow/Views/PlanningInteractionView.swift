@@ -1,4 +1,5 @@
 import AnvilTheme
+import AnvilUI
 import SwiftUI
 
 struct PlanningInteractionView: View {
@@ -7,13 +8,13 @@ struct PlanningInteractionView: View {
         case editorPrimary
     }
 
-    let state: WorkflowInteractionState
+    let state: PlanningInteractionState
     let presentationStyle: PresentationStyle
     let action: (PlanningInteractionActionProcessor.Action) -> Void
     @Environment(\.anvilTheme) private var theme
 
     init(
-        state: WorkflowInteractionState,
+        state: PlanningInteractionState,
         presentationStyle: PresentationStyle = .editorPrimary,
         action: @escaping (PlanningInteractionActionProcessor.Action) -> Void
     ) {
@@ -26,6 +27,9 @@ struct PlanningInteractionView: View {
         VStack(alignment: .leading, spacing: theme.spacing.cozy) {
             PlanningInteractionHeader(state: state, action: action)
             PlanningInteractionContent(state: state, presentationStyle: presentationStyle, action: action)
+            if let reviewHandoffSummary = state.reviewHandoffSummary {
+                PlanningInteractionReviewSummary(summary: reviewHandoffSummary, action: action)
+            }
             PlanningInteractionDecisionBar(state: state, action: action)
         }
         .padding(theme.spacing.comfortable)
@@ -39,7 +43,7 @@ struct PlanningInteractionView: View {
 }
 
 private struct PlanningInteractionHeader: View {
-    let state: WorkflowInteractionState
+    let state: PlanningInteractionState
     let action: (PlanningInteractionActionProcessor.Action) -> Void
     @Environment(\.anvilTheme) private var theme
 
@@ -64,21 +68,34 @@ private struct PlanningInteractionHeader: View {
 
             Spacer()
 
-            if state.isBusy {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityIdentifier("planning.busyIndicator")
-            }
+            busyIndicator
 
-            Button(
-                action: { action(.tapSubmit) },
-                label: {
-                    Label(submitButtonTitle, systemImage: submitButtonSystemImage)
+            VStack(alignment: .trailing, spacing: theme.spacing.tiny) {
+                AnvilActionButton(
+                    configuration: AnvilActionButtonConfiguration(
+                        title: submitButtonTitle,
+                        systemImage: submitButtonSystemImage,
+                        style: .primary,
+                        isDisabled: !state.canAttemptSubmit,
+                        accessibilityIdentifier: "planning.submitPlan"
+                    ),
+                    action: { action(.tapAcceptDraftForReview) }
+                )
+
+                if state.submittedOutput == nil && !state.isBusy {
+                    Text("Starts automated review.")
+                        .font(theme.typography.caption)
+                        .foregroundStyle(theme.colors.textSecondary)
                 }
-            )
-            .buttonStyle(.borderedProminent)
-            .disabled(!state.canSubmit)
-            .accessibilityIdentifier("planning.submitPlan")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var busyIndicator: some View {
+        if state.isBusy {
+            AnvilStatusIndicator(state: .running)
+                .accessibilityIdentifier("planning.busyIndicator")
         }
     }
 
@@ -87,7 +104,7 @@ private struct PlanningInteractionHeader: View {
         case .sending:
             return "Planner is responding."
         case .materializing:
-            return "Submitting and validating the plan artifact."
+            return "Accepting and validating the plan artifact."
         case .reviewing:
             return "Automated review cycles are running."
         case .completed:
@@ -97,11 +114,16 @@ private struct PlanningInteractionHeader: View {
         case .idle:
             break
         }
-        if state.draftRequiresUserEdit {
-            return "Review and edit the generated draft before submitting it."
-        }
         if let submittedOutput = state.submittedOutput {
             return "Submitted plan artifact \(submittedOutput.id)."
+        }
+        switch state.gateState {
+        case .awaitingUserReview:
+            return "Review the draft plan, then accept it for automated review."
+        case .needsOutput(let issue):
+            return issue.message
+        case .interacting, .accepted:
+            break
         }
         return state.subtitle
     }
@@ -110,265 +132,56 @@ private struct PlanningInteractionHeader: View {
         if state.isBusy {
             return "Working"
         }
-        return state.submittedOutput == nil ? "Submit Plan" : "Submitted"
+        return state.submittedOutput == nil ? "Accept draft for review" : "Accepted"
     }
 
     private var submitButtonSystemImage: String {
         if state.isBusy {
             return "hourglass"
         }
-        return state.submittedOutput == nil ? "tray.and.arrow.up.fill" : "checkmark.circle.fill"
+        return state.submittedOutput == nil ? "checkmark.circle.fill" : "checkmark.circle.fill"
     }
 }
 
 private struct PlanningInteractionDecisionBar: View {
-    let state: WorkflowInteractionState
+    let state: PlanningInteractionState
     let action: (PlanningInteractionActionProcessor.Action) -> Void
     @Environment(\.anvilTheme) private var theme
 
     var body: some View {
         if state.canResolveCompletedOutput {
             HStack(spacing: theme.spacing.compact) {
-                Button(
-                    action: { action(.tapAcceptPlan) },
-                    label: { Label("Accept Plan", systemImage: "checkmark.circle.fill") }
+                AnvilActionButton(
+                    configuration: AnvilActionButtonConfiguration(
+                        title: "Accept reviewed workflow",
+                        systemImage: "checkmark.circle.fill",
+                        style: .primary,
+                        accessibilityIdentifier: "planning.acceptPlan"
+                    ),
+                    action: { action(.tapAcceptReviewedWorkflow) }
                 )
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("planning.acceptPlan")
 
-                Button(
-                    action: { action(.tapRequestAnotherCycle) },
-                    label: { Label("Another Cycle", systemImage: "arrow.triangle.2.circlepath") }
+                AnvilActionButton(
+                    configuration: AnvilActionButtonConfiguration(
+                        title: "Run another cycle",
+                        systemImage: "arrow.triangle.2.circlepath",
+                        accessibilityIdentifier: "planning.anotherCycle"
+                    ),
+                    action: { action(.tapRequestAnotherCycle) }
                 )
-                .accessibilityIdentifier("planning.anotherCycle")
 
-                Button(
-                    action: { action(.tapContinuePlanning) },
-                    label: { Label("Continue Planning", systemImage: "square.and.pencil") }
+                AnvilActionButton(
+                    configuration: AnvilActionButtonConfiguration(
+                        title: "Continue Planning",
+                        systemImage: "square.and.pencil",
+                        accessibilityIdentifier: "planning.continuePlanning"
+                    ),
+                    action: { action(.tapContinuePlanning) }
                 )
-                .accessibilityIdentifier("planning.continuePlanning")
 
                 Spacer()
             }
             .padding(.top, theme.spacing.compact)
-        }
-    }
-}
-
-private struct PlanningInteractionContent: View {
-    let state: WorkflowInteractionState
-    let presentationStyle: PlanningInteractionView.PresentationStyle
-    let action: (PlanningInteractionActionProcessor.Action) -> Void
-    @Environment(\.anvilTheme) private var theme
-
-    var body: some View {
-        switch presentationStyle {
-        case .editorPrimary:
-            HStack(alignment: .top, spacing: theme.spacing.comfortable) {
-                PlanningInteractionDraftEditor(state: state, action: action)
-                    .frame(minWidth: 520, maxWidth: .infinity, minHeight: 440)
-
-                PlanningInteractionNotes(state: state, action: action)
-                    .frame(width: 360)
-                    .frame(minHeight: 440)
-            }
-        case .inline:
-            HStack(alignment: .top, spacing: theme.spacing.comfortable) {
-                PlanningInteractionNotes(state: state, action: action)
-                    .frame(minWidth: 320, maxWidth: .infinity, minHeight: 320)
-
-                PlanningInteractionDraftEditor(state: state, action: action)
-                    .frame(minWidth: 360, maxWidth: .infinity, minHeight: 320)
-            }
-        }
-    }
-}
-
-private struct PlanningInteractionNotes: View {
-    let state: WorkflowInteractionState
-    let action: (PlanningInteractionActionProcessor.Action) -> Void
-    @Environment(\.anvilTheme) private var theme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.compact) {
-            Text("Interaction notes")
-                .font(theme.typography.caption)
-                .foregroundStyle(theme.colors.textSecondary)
-
-            PlanningInteractionEntryList(entries: state.entries)
-
-            if let errorMessage = state.errorMessage {
-                Text(errorMessage)
-                    .font(theme.typography.caption)
-                    .foregroundStyle(theme.colors.danger)
-                    .accessibilityIdentifier("planning.error")
-            }
-
-            PlanningInteractionNoteComposer(state: state, action: action)
-        }
-    }
-}
-
-private struct PlanningInteractionEntryList: View {
-    let entries: [WorkflowInteractionEntry]
-    @Environment(\.anvilTheme) private var theme
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: theme.spacing.compact) {
-                ForEach(entries) { entry in
-                    PlanningInteractionEntryBubble(entry: entry)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(theme.spacing.cozy)
-        }
-        .background(theme.colors.panelBackground)
-        .clipShape(RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous)
-                .stroke(theme.colors.border, lineWidth: 1)
-        }
-        .accessibilityIdentifier("planning.conversation")
-    }
-}
-
-private struct PlanningInteractionNoteComposer: View {
-    let state: WorkflowInteractionState
-    let action: (PlanningInteractionActionProcessor.Action) -> Void
-    @Environment(\.anvilTheme) private var theme
-
-    var body: some View {
-        HStack(spacing: theme.spacing.compact) {
-            TextField(state.inputPlaceholder, text: noteBinding, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...3)
-                .padding(.horizontal, theme.spacing.cozy)
-                .padding(.vertical, theme.spacing.compact)
-                .background(theme.colors.elevatedPanelBackground)
-                .clipShape(RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous)
-                        .stroke(theme.colors.border, lineWidth: 1)
-                }
-                .accessibilityLabel("Interaction note")
-                .accessibilityIdentifier("planning.messageInput")
-
-            Button(
-                action: { action(.tapAddNote) },
-                label: {
-                    Label("Add note", systemImage: "plus.message.fill")
-                        .labelStyle(.iconOnly)
-                        .frame(width: 30, height: 30)
-                }
-            )
-            .buttonStyle(.borderedProminent)
-            .disabled(!state.canAddNote)
-            .accessibilityLabel("Add interaction note")
-            .accessibilityIdentifier("planning.sendButton")
-        }
-    }
-
-    private var noteBinding: Binding<String> {
-        Binding(get: { state.note }, set: { action(.changeNote($0)) })
-    }
-}
-
-private struct PlanningInteractionDraftEditor: View {
-    let state: WorkflowInteractionState
-    let action: (PlanningInteractionActionProcessor.Action) -> Void
-    @Environment(\.anvilTheme) private var theme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.compact) {
-            Text(state.draftTitle)
-                .font(theme.typography.caption)
-                .foregroundStyle(theme.colors.textSecondary)
-
-            if state.phase == .sending {
-                Text("The draft updates only when the planner returns an explicit markdown plan.")
-                    .font(theme.typography.caption)
-                    .foregroundStyle(theme.colors.textSecondary)
-            }
-            if state.draftRequiresUserEdit {
-                Text("Edit the generated draft before submitting it to the workflow.")
-                    .font(theme.typography.caption)
-                    .foregroundStyle(theme.colors.textSecondary)
-                    .accessibilityIdentifier("planning.requiresUserEdit")
-            }
-
-            TextEditor(text: draftBinding)
-                .font(theme.typography.body)
-                .foregroundStyle(theme.colors.textPrimary)
-                .scrollContentBackground(.hidden)
-                .padding(theme.spacing.compact)
-                .background(theme.colors.panelBackground)
-                .clipShape(RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous)
-                        .stroke(theme.colors.border, lineWidth: 1)
-                }
-                .disabled(state.submittedOutput != nil || state.isBusy)
-                .accessibilityLabel(state.draftTitle)
-                .accessibilityIdentifier("planning.draftPlan")
-        }
-    }
-
-    private var draftBinding: Binding<String> {
-        Binding(get: { state.draft }, set: { action(.changeDraft($0)) })
-    }
-}
-
-private struct PlanningInteractionEntryBubble: View {
-    let entry: WorkflowInteractionEntry
-    @Environment(\.anvilTheme) private var theme
-
-    var body: some View {
-        HStack(alignment: .bottom) {
-            if entry.source == .user {
-                Spacer(minLength: 42)
-            }
-
-            entryContent
-
-            if entry.source != .user {
-                Spacer(minLength: 42)
-            }
-        }
-    }
-
-    private var entryContent: some View {
-        VStack(alignment: .leading, spacing: theme.spacing.tiny) {
-            Text(entry.title)
-                .font(theme.typography.caption.weight(.semibold))
-                .foregroundStyle(theme.colors.textSecondary)
-            Text(entry.text)
-                .font(theme.typography.body)
-                .foregroundStyle(theme.colors.textPrimary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(theme.spacing.cozy)
-        .background(entry.source == .user ? theme.colors.selectionBackground : theme.colors.elevatedPanelBackground)
-        .clipShape(RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: theme.radii.small, style: .continuous)
-                .stroke(entry.source == .user ? theme.colors.accent.opacity(0.24) : theme.colors.border, lineWidth: 1)
-        }
-        .frame(maxWidth: 520, alignment: entry.source == .user ? .trailing : .leading)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-extension WorkflowInteractionEntry {
-    fileprivate var title: String {
-        switch source {
-        case .system:
-            return "Workflow"
-        case .user:
-            return "You"
-        case .assistant:
-            return "Planner"
         }
     }
 }

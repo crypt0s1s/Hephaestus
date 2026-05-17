@@ -2,22 +2,25 @@ import Foundation
 
 @MainActor
 extension WorkflowRunnerModel {
-    func applyCompletedPlannerTurn(_ response: String) {
-        let plan = PlanningInteractionPrototypePrompts.extractDraftPlan(from: response)
+    func applyCompletedPlannerTurn(draftArtifact: PlanningDraftArtifact) {
+        guard let interaction = currentPlanningInteractionState else { return }
+        let settlement = PlanningReviewPrototypeTurnSettlement(
+            artifactStore: planningReviewServices.planArtifactMaterializer
+        ).settle(
+            draftArtifact: draftArtifact,
+            interaction: interaction
+        )
         updateInteraction {
-            if let plan {
-                $0.draft = plan
-                $0.draftProvenance = .agentGenerated
-                $0.entries.append(WorkflowInteractionEntry(source: .system, text: Self.generatedDraftNotice))
+            if let plan = settlement.proposedPlan {
+                $0.updatePlanningDraftCandidate(content: plan, source: .agent)
+                if let notice = settlement.notice {
+                    $0.entries.append(PlanningInteractionEntry(source: .system, text: notice))
+                }
+            } else if settlement.shouldRequireOutput {
+                $0.gateState = PlanningInteractionGateEvaluator.evaluate(candidate: $0.outputCandidate)
             }
             $0.phase = .idle
-            $0.errorMessage =
-                plan == nil
-                ? "Planner response did not include a fenced markdown plan, so the draft was not changed."
-                : nil
+            $0.errorMessage = settlement.errorMessage
         }
     }
-
-    private static let generatedDraftNotice =
-        "The planner generated a draft. Edit it before submitting so the workflow has a user-reviewed plan."
 }

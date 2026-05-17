@@ -11,62 +11,77 @@ extension WorkflowRunnerModel {
 
     func updatePlanningDraftPlan(_ plan: String) {
         updateInteraction {
-            if $0.draft != plan {
-                $0.draftProvenance =
-                    plan.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ? .empty
-                    : .userEdited
-            }
-            $0.draft = plan
+            $0.updatePlanningDraftCandidate(content: plan, source: .user)
             $0.errorMessage = nil
         }
     }
 
     func sendPlanningMessage() async {
         guard let project = state.selectedProject,
-            let interaction = state.planningInteraction,
+            let interaction = currentPlanningInteractionState,
             !interaction.trimmedNote.isEmpty,
             interaction.phase == .idle
         else { return }
         let note = interaction.trimmedNote
         updateInteraction {
-            $0.entries.append(WorkflowInteractionEntry(source: .user, text: note))
+            $0.entries.append(PlanningInteractionEntry(source: .user, text: note))
             $0.note = ""
             $0.phase = .sending
             $0.errorMessage = nil
         }
 
+        var assistantEntryID: PlanningInteractionEntry.ID?
         do {
             let session = try await planningSession(for: interaction, project: project)
             updateInteraction { $0.backendSession = session }
-            let assistantEntryID = appendStreamingPlannerEntry()
+            let streamingEntryID = appendStreamingPlannerEntry()
+            assistantEntryID = streamingEntryID
             let response = try await sendPlannerTurn(
                 note: note,
                 session: session,
-                assistantEntryID: assistantEntryID
+                assistantEntryID: streamingEntryID
             )
-            applyCompletedPlannerTurn(response)
+            let loadedDraft = try materializePlannerDraft(
+                response: response,
+                project: project,
+                interaction: interaction
+            )
+            applyCompletedPlannerTurn(draftArtifact: loadedDraft.artifact)
         } catch {
-            updateInteraction {
-                $0.phase = .idle
-                $0.errorMessage = "Planner turn failed: \(error.localizedDescription)"
-            }
+            handlePlannerTurnFailure(error, assistantEntryID: assistantEntryID)
+        }
+    }
+
+    private func handlePlannerTurnFailure(
+        _ error: Error,
+        assistantEntryID: PlanningInteractionEntry.ID?
+    ) {
+        let message = "Planner turn failed: \(error.localizedDescription)"
+        if let assistantEntryID {
+            failStreamingPlannerEntry(id: assistantEntryID, message: message)
+        }
+        updateInteraction {
+            $0.phase = .idle
+            $0.errorMessage = message
         }
     }
 
     func submitPlanningDraftPlan() async {
         guard let project = state.selectedProject,
-            let interaction = state.planningInteraction,
+            let interaction = currentPlanningInteractionState,
             interaction.phase == .idle
         else { return }
         let submittedPlan = interaction.trimmedDraft
         guard !submittedPlan.isEmpty else {
-            updateInteraction { $0.errorMessage = "Add a draft plan before submitting." }
+            updateInteraction {
+                $0.gateState = PlanningInteractionGateEvaluator.evaluate(candidate: $0.outputCandidate)
+                $0.errorMessage = Self.planningDraftGateErrorMessage(for: $0.gateState)
+            }
             return
         }
-        guard interaction.draftProvenance == .userEdited else {
+        guard interaction.canSubmit else {
             updateInteraction {
-                $0.errorMessage = "Edit the generated draft before submitting it for review."
+                $0.errorMessage = Self.planningDraftGateErrorMessage(for: interaction.gateState)
             }
             return
         }
@@ -76,9 +91,9 @@ extension WorkflowRunnerModel {
             $0.phase = .materializing
             $0.errorMessage = nil
             $0.entries.append(
-                WorkflowInteractionEntry(
+                PlanningInteractionEntry(
                     source: .system,
-                    text: "Submitting the draft plan and preparing automated review cycles."
+                    text: "Accepting the draft plan and preparing automated review cycles."
                 )
             )
         }
@@ -94,50 +109,34 @@ extension WorkflowRunnerModel {
         }
     }
 
-    func acceptPlanningReview() {
-        guard let interaction = state.planningInteraction,
+    func continuePlanningReview() {
+        guard let project = state.selectedProject,
+            let interaction = currentPlanningInteractionState,
             interaction.canResolveCompletedOutput
         else { return }
-        update {
-            $0.isRunning = false
-            $0.activeWorkflowID = nil
-            $0.lastRunWorkflowID = PlanningReviewWorkflowRunner.id
-            $0.lastRunSucceeded = true
-            $0.statusMessage = "Planning review workflow accepted."
-            $0.planningInteraction?.phase = .accepted
-            $0.planningInteraction?.runtimeRun.status = .completed
-            $0.planningInteraction?.runtimeRun.activePause = nil
-            $0.planningInteraction?.runtimeRun.updatedAt = Date()
-            $0.planningInteraction?.entries.append(
-                WorkflowInteractionEntry(
+        let latestPlanOutput = interaction.latestResolvedOutput ?? interaction.submittedOutput
+        updateInteraction {
+            $0.sessionID = UUID().uuidString
+            $0.submittedOutput = nil
+            $0.gateState = .interacting
+            if let latestPlanOutput {
+                $0.updatePlanningDraftCandidate(content: latestPlanOutput.artifact.content, source: .user)
+            } else {
+                $0.updatePlanningDraftCandidate(content: $0.draft, source: .user)
+            }
+            $0.phase = .idle
+            $0.errorMessage = nil
+            $0.entries.append(
+                PlanningInteractionEntry(
                     source: .system,
-                    text: "Accepted the submitted plan and completed the workflow."
+                    text: "Reopened planning with the latest reviewed plan and feedback history preserved."
                 )
             )
         }
-    }
-
-    func continuePlanningReview() {
-        guard let project = state.selectedProject,
-            let interaction = state.planningInteraction,
-            interaction.canResolveCompletedOutput
-        else { return }
-        let latestPlan = latestPlanningReviewPlanContent(for: interaction)
-        let feedbackHistory = planningReviewFeedbackHistory(from: interaction.workflowMessages)
-        let continuedRecords = planningReviewContinuationRecords(
-            from: state.stepRecords,
-            feedbackHistory: feedbackHistory
-        )
-        updateInteraction {
-            reopenPlanningInteraction(
-                &$0,
-                latestPlan: latestPlan,
-                feedbackHistory: feedbackHistory
-            )
-        }
         update {
-            $0.isRunning = true
+            $0.isRunning = false
             $0.activeWorkflowID = PlanningReviewWorkflowRunner.id
+            $0.activeWorkflowActivity = .waitingForInteraction
             $0.lastRunSucceeded = nil
             $0.stepRecords = continuedRecords
             $0.timelineOutput = """
@@ -148,30 +147,31 @@ extension WorkflowRunnerModel {
         }
     }
 
+    func notePlanningReviewArtifactPathCopied(_ path: String) {
+        update {
+            $0.statusMessage = "Copied review artifact path: \(path)"
+        }
+    }
+
     func requestAnotherPlanningReviewCycle() async {
         guard let project = state.selectedProject,
-            let interaction = state.planningInteraction,
-            let output = interaction.submittedOutput,
+            let interaction = currentPlanningInteractionState,
+            let submittedOutput = interaction.submittedOutput,
             interaction.phase == .completed
         else { return }
-        let submittedPlanMessage = submittedPlanMessage(for: interaction, output: output)
-        prepareAnotherPlanningReviewCycle()
+        let currentPlanOutput = interaction.latestResolvedOutput ?? submittedOutput
+        markPlanningReviewCycleRequested()
         let runner = planningReviewServices.makeWorkflowRunner()
-        var run = PlanningReviewPrototypeAutomationRun(
-            timeline: state.timelineOutput.isEmpty
-                ? planningReviewServices.automation.startedTimeline
-                : state.timelineOutput,
-            records: state.stepRecords.filter { $0.id != "planning-review-interactive-user-review" },
-            planPath: output.artifact.projectRelativePath ?? "the submitted plan artifact",
-            workflowMessages: interaction.workflowMessages
+        var run = runner.makeAdditionalAutomationRun(
+            interaction: interaction,
+            submittedOutput: submittedOutput,
+            currentPlanOutput: currentPlanOutput,
+            timeline: state.timelineOutput,
+            records: state.stepRecords
         )
-        await runner.runPlanningReviewPrototypeAutomationCycle(
-            cycle: nextPlanningReviewCycleNumber(),
+        await runner.runPlanningReviewAutomationCycle(
+            cycle: runner.nextAutomationCycleNumber(from: state.stepRecords),
             project: project,
-            currentPlanMessage: latestPlanningReviewPlanMessage(
-                for: interaction,
-                fallback: submittedPlanMessage
-            ),
             run: &run,
             persistMessages: { [weak self] messages in
                 guard let self else { return }
@@ -181,6 +181,204 @@ extension WorkflowRunnerModel {
                 await model?.applyPlanningReviewProgress(progress)
             }
         )
-        applyPlanningReviewResult(runner.finishPlanningReviewPrototypeAutomationRun(run))
+        applyPlanningReviewResult(runner.finishPlanningReviewAutomationRun(run), run: run)
     }
+
+    private func markPlanningReviewCycleRequested() {
+        updateInteraction {
+            $0.phase = .reviewing
+            $0.errorMessage = nil
+            $0.entries.append(
+                PlanningInteractionEntry(
+                    source: .system,
+                    text: "Requested another automated review cycle for the latest reviewed plan."
+                )
+            )
+        }
+        update {
+            $0.isRunning = true
+            $0.activeWorkflowID = PlanningReviewWorkflowRunner.id
+            $0.activeWorkflowActivity = .running
+            $0.lastRunSucceeded = nil
+            $0.statusMessage = "Automated planning review cycles are running."
+        }
+    }
+
+    private func submitValidatedPlan(
+        project: WorkflowProject,
+        interaction: PlanningInteractionState,
+        submittedPlan: String
+    ) async throws {
+        let acceptance = try planningReviewServices.planArtifactMaterializer.acceptDraftForReview(
+            project: project,
+            sessionID: interaction.sessionID,
+            producerStepID: interaction.stepID,
+            request: PlanningDraftAcceptanceRequest(
+                candidate: interaction.outputCandidate,
+                expectedRevision: interaction.outputCandidate.revision,
+                idempotencyKey: Self.acceptanceIdempotencyKey(for: interaction)
+            )
+        )
+        let output = acceptance.output
+        guard acceptance.isNewAcceptance else {
+            applyAlreadyAcceptedPlan(interaction: interaction, output: output)
+            return
+        }
+        let submittedInteraction = makeSubmittedPlanningInteraction(
+            from: interaction,
+            acceptance: acceptance
+        )
+        let runner = planningReviewServices.makeWorkflowRunner()
+        let progress = runner.submitPlan(project: project, output: output)
+        applySubmittedPlan(
+            interaction: submittedInteraction,
+            output: output,
+            plan: submittedPlan,
+            progress: progress
+        )
+        let result = await runner.runAutomatedReviewCycles(
+            project: project,
+            submittedOutput: output,
+            sessionID: interaction.sessionID,
+            progress: { [weak model = self] progress in
+                await model?.applyPlanningReviewProgress(progress)
+            }
+        )
+        applyPlanningReviewResult(result.processResult, run: result.run)
+    }
+
+    private func makeSubmittedPlanningInteraction(
+        from interaction: PlanningInteractionState,
+        acceptance: PlanningDraftAcceptance
+    ) -> PlanningInteractionState {
+        var submittedInteraction = interaction
+        submittedInteraction.submittedOutput = acceptance.output
+        submittedInteraction.relatedOutputs = [acceptance.output]
+        submittedInteraction.latestResolvedOutput = acceptance.output
+        submittedInteraction.phase = .reviewing
+        submittedInteraction.acceptPlanningDraftCandidate(acceptance.record)
+        let artifactPath = acceptance.output.artifact.projectRelativePath ?? "the project"
+        submittedInteraction.entries.append(
+            PlanningInteractionEntry(
+                source: .system,
+                text: "Accepted plan artifact was written to \(artifactPath). Automated review cycles are running."
+            )
+        )
+        return submittedInteraction
+    }
+
+    private func materializePlannerDraft(
+        response: String,
+        project: WorkflowProject,
+        interaction: PlanningInteractionState
+    ) throws -> PlanningLoadedDraftArtifact {
+        guard let plan = PlanningPlanExtractor.extractMarkdownPlan(from: response) else {
+            throw PlanningPlanArtifactMaterializationError.missingRequiredSections(
+                PlanningPlanArtifactPolicy.missingRequiredSections(in: response)
+            )
+        }
+        return try planningReviewServices.planArtifactMaterializer.materializeDraftArtifact(
+            project: project,
+            sessionID: interaction.sessionID,
+            content: plan
+        )
+    }
+
+    private func handlePlanningSubmissionFailure(_ error: Error) {
+        updateInteraction {
+            $0.phase = .idle
+            $0.errorMessage = "Plan submission failed: \(error.localizedDescription)"
+        }
+    }
+
+    static func acceptanceIdempotencyKey(for interaction: PlanningInteractionState) -> String {
+        "\(interaction.sessionID)-\(interaction.outputCandidate.outputID)-\(interaction.outputCandidate.revision)"
+    }
+
+    func updateInteraction(_ mutate: (inout PlanningInteractionState) -> Void) {
+        guard var interaction = currentPlanningInteractionState else { return }
+        mutate(&interaction)
+        seedPlanningInteractionState(interaction)
+    }
+
+    private func applySubmittedPlan(
+        interaction: PlanningInteractionState,
+        output: InteractiveStepOutput,
+        plan: String,
+        progress: WorkflowRunProgress
+    ) {
+        seedPlanningInteractionState(interaction)
+        update {
+            $0.stepRecords = progress.stepRecords
+            $0.timelineOutput = progress.timeline
+            $0.output = """
+                == Planning Review Workflow ==
+                Submitted plan artifact: \(output.id)
+                Path: \(output.artifact.projectRelativePath ?? "not exported")
+
+                \(plan)
+                """
+            $0.isRunning = true
+            $0.activeWorkflowID = PlanningReviewWorkflowRunner.id
+            $0.activeWorkflowActivity = .running
+            $0.interactiveActivity = interaction.interactiveActivityProjection
+            $0.lastRunWorkflowID = PlanningReviewWorkflowRunner.id
+            $0.lastRunSucceeded = nil
+            $0.statusMessage = "Submitted plan is validated and ready for automated review cycles."
+        }
+    }
+
+    private func applyPlanningReviewProgress(_ progress: WorkflowRunProgress) {
+        update {
+            $0.stepRecords = progress.stepRecords
+            $0.timelineOutput = progress.timeline
+            $0.debugLogURL = progress.debugLogURL
+            $0.isRunning = true
+            $0.activeWorkflowID = PlanningReviewWorkflowRunner.id
+            $0.activeWorkflowActivity = .running
+            $0.statusMessage = "Automated planning review cycles are running."
+        }
+    }
+
+    private func applyPlanningReviewResult(
+        _ result: ProcessResult,
+        run: PlanningReviewAutomationRun? = nil
+    ) {
+        guard var interaction = currentPlanningInteractionState else { return }
+        interaction.phase = result.exitCode == 0 ? .completed : .idle
+        if let run {
+            interaction.relatedOutputs = run.relatedOutputs
+            interaction.latestResolvedOutput = run.currentPlanOutput
+            if result.exitCode == 0, let latestPlan = run.currentPlanOutput {
+                interaction.draft = latestPlan.artifact.content
+            }
+        }
+        if result.exitCode != 0 {
+            interaction.sessionID = UUID().uuidString
+            interaction.submittedOutput = nil
+            interaction.gateState = .interacting
+            let draft = run?.currentPlanOutput?.artifact.content ?? interaction.draft
+            interaction.updatePlanningDraftCandidate(content: draft, source: .user)
+            interaction.errorMessage =
+                "Automated review failed. Update the draft or submit it again after inspecting the run."
+        }
+        seedPlanningInteractionState(interaction)
+        update {
+            $0.output = result.output
+            $0.timelineOutput = result.timeline.isEmpty ? result.output : result.timeline
+            $0.stepRecords = result.stepRecords
+            $0.debugLogURL = result.debugLogURL
+            $0.isRunning = false
+            $0.activeWorkflowID = result.exitCode == 0 ? PlanningReviewWorkflowRunner.id : nil
+            $0.activeWorkflowActivity = result.exitCode == 0 ? .waitingForUserReview : nil
+            $0.interactiveActivity = interaction.interactiveActivityProjection
+            $0.lastRunWorkflowID = PlanningReviewWorkflowRunner.id
+            $0.lastRunSucceeded = result.exitCode == 0 ? nil : false
+            $0.statusMessage =
+                result.exitCode == 0
+                ? "Automated review cycles finished. Review the plan before accepting it."
+                : "Automated review cycles failed. Inspect the run updates before retrying."
+        }
+    }
+
 }

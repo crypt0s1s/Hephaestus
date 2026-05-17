@@ -23,6 +23,8 @@ This folder captures the current direction for Hephaestus as an agent system.
 - [Interactive Workflow Step Spike](./plans/0010-interactive-workflow-step-spike.md): spike plan for interactive workflow pause/resume, runtime-owned workflow messages, and planning-review workflow handoffs.
 - [Interactive Planning Review Manual UI Checklist](./plans/0011-interactive-planning-review-manual-ui-checklist.md): manual acceptance checklist for PRD-0011 interactive planning workflow UI flows.
 - [Interactive Workflow Model Refinement](./plans/0012-interactive-workflow-model-refinement.md): sub-agent review summary and implementation direction for Codex-backed interactive planning, artifact materialization, and review cycles.
+- [Interactive Step Review Gates And Exit Policy](./plans/0013-interactive-step-review-gates-and-exit-policy.md): plan to replace draft provenance with required-output validation, user review gates, and host-enforced agent exit criteria.
+- [Interactive Runner Decoupling Plan](./plans/0014-interactive-runner-decoupling-plan.md): plan to move interactive planning state behind a reusable workflow activity boundary without generalizing planning-specific behavior too early.
 
 ## Documentation Routing
 

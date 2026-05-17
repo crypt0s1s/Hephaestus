@@ -1,10 +1,11 @@
 import Foundation
 
-struct MockHarnessBackendAdapter: HarnessBackendAdapter {
+#if DEBUG
+struct UITestHarnessBackendAdapter: HarnessBackendAdapter {
     func startSession(_ request: StartSessionRequest) async throws -> BackendSession {
         BackendSession(
             id: UUID().uuidString,
-            backendName: "mock",
+            backendName: "ui-test",
             project: request.project
         )
     }
@@ -15,7 +16,7 @@ struct MockHarnessBackendAdapter: HarnessBackendAdapter {
 
     func startTurn(_ request: StartTurnRequest) async throws -> AsyncThrowingStream<BackendEvent, Error> {
         AsyncThrowingStream { continuation in
-            let output = Self.planningResponse(for: request.prompt)
+            let output = Self.output(for: request.prompt)
             continuation.yield(.turnStarted(sessionID: request.session.id))
             continuation.yield(.outputChunk(output))
             continuation.yield(.turnCompleted(ProcessResult(exitCode: 0, output: output)))
@@ -27,12 +28,19 @@ struct MockHarnessBackendAdapter: HarnessBackendAdapter {
 
     func cancelTurn(_ request: CancelTurnRequest) async throws {}
 
-    private static func planningResponse(for prompt: String) -> String {
+    private static func output(for prompt: String) -> String {
+        if prompt.contains("review-only planning agent") {
+            return "pass"
+        }
+        return planningPlan(for: prompt)
+    }
+
+    private static func planningPlan(for prompt: String) -> String {
         """
         # Plan
 
         ## Summary
-        \(prompt.firstLineForPromptSummary)
+        \(prompt.firstLineForUITestSummary)
 
         ## Scope
         - Implement the requested interactive planning workflow slice.
@@ -41,24 +49,25 @@ struct MockHarnessBackendAdapter: HarnessBackendAdapter {
         - Do not broaden into a general workflow builder in this pass.
 
         ## Implementation Approach
-        - Keep the planner interaction Codex-backed through the harness backend.
-        - Materialize the selected draft into a markdown artifact.
+        - Keep the planner interaction behind the harness backend adapter.
+        - Materialize the reviewed draft into a markdown artifact.
         - Validate the artifact before automated review begins.
 
         ## Validation
-        - Run focused model tests and the Hephaestus macOS build.
+        - Run focused model tests and the Hephaestus macOS UI flow.
 
         ## Open Questions
-        - Confirm the long-term pause/resume message envelope.
+        - Confirm the long-term pause and resume envelope.
         """
     }
 }
 
-extension String {
-    fileprivate var firstLineForPromptSummary: String {
+private extension String {
+    var firstLineForUITestSummary: String {
         split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty }
             ?? "Draft the requested plan."
     }
 }
+#endif

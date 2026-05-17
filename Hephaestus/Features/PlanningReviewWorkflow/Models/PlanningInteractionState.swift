@@ -1,6 +1,6 @@
 import Foundation
 
-struct WorkflowInteractionState: Equatable {
+struct PlanningInteractionState: Equatable {
     enum Phase: Equatable {
         case idle
         case sending
@@ -8,12 +8,6 @@ struct WorkflowInteractionState: Equatable {
         case reviewing
         case completed
         case accepted
-    }
-
-    enum DraftProvenance: Equatable {
-        case empty
-        case agentGenerated
-        case userEdited
     }
 
     var workflowID: WorkflowDefinition.ID
@@ -26,12 +20,14 @@ struct WorkflowInteractionState: Equatable {
     var inputPlaceholder: String
     var draftTitle: String
     var phase: Phase = .idle
-    var draftProvenance: DraftProvenance = .empty
+    var outputCandidate: InteractiveStepOutputCandidate
+    var gateState: InteractiveStepGateState = .interacting
     var draft = ""
     var note = ""
-    var entries: [WorkflowInteractionEntry]
+    var entries: [PlanningInteractionEntry]
     var submittedOutput: InteractiveStepOutput?
-    var workflowMessages: [WorkflowMessage]
+    var relatedOutputs: [InteractiveStepOutput] = []
+    var latestResolvedOutput: InteractiveStepOutput?
     var errorMessage: String?
 
     init(
@@ -42,7 +38,8 @@ struct WorkflowInteractionState: Equatable {
         subtitle: String,
         inputPlaceholder: String,
         draftTitle: String,
-        initialEntries: [WorkflowInteractionEntry] = []
+        outputCandidate: InteractiveStepOutputCandidate,
+        initialEntries: [PlanningInteractionEntry] = []
     ) {
         self.workflowID = workflowID
         self.stepID = stepID
@@ -77,6 +74,7 @@ struct WorkflowInteractionState: Equatable {
         self.subtitle = subtitle
         self.inputPlaceholder = inputPlaceholder
         self.draftTitle = draftTitle
+        self.outputCandidate = outputCandidate
         self.entries = initialEntries
         self.workflowMessages = []
     }
@@ -94,15 +92,15 @@ struct WorkflowInteractionState: Equatable {
     }
 
     var canSubmit: Bool {
-        !trimmedDraft.isEmpty && submittedOutput == nil && phase == .idle && draftProvenance == .userEdited
+        submittedOutput == nil && phase == .idle && gateState.canAcceptOutputForReview
+    }
+
+    var canAttemptSubmit: Bool {
+        submittedOutput == nil && phase == .idle
     }
 
     var canResolveCompletedOutput: Bool {
         submittedOutput != nil && phase == .completed
-    }
-
-    var draftRequiresUserEdit: Bool {
-        !trimmedDraft.isEmpty && submittedOutput == nil && phase == .idle && draftProvenance == .agentGenerated
     }
 
     var isBusy: Bool {
@@ -115,7 +113,7 @@ struct WorkflowInteractionState: Equatable {
     }
 }
 
-struct WorkflowInteractionEntry: Identifiable, Equatable {
+struct PlanningInteractionEntry: Identifiable, Equatable {
     enum Source: Equatable {
         case system
         case user

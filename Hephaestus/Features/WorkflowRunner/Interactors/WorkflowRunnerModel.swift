@@ -12,22 +12,26 @@ final class WorkflowRunnerModel: ObservableObject {
     private let builtInWorkflowCatalog: BuiltInWorkflowCatalog
     private let externalWorkflowDiscovery: ExternalWorkflowDiscovery
     private let externalWorkflowRunner: ExternalWorkflowRunner
-    let planningReviewServices: PlanningReviewServices
+    let interactiveSessionStore: WorkflowInteractiveSessionStore
     private let environment: [String: String]
 
     convenience init() {
+        let processRunner = DefaultProcessRunner()
+        let environment = ProcessInfo.processInfo.environment
+        let interactiveSessionStore = WorkflowInteractiveSessionStore()
         self.init(
             projectStore: UserDefaultsProjectStore(),
             projectPicker: NSOpenPanelProjectPicker(),
             branchReader: GitBranchReader(),
-            builtInWorkflowCatalog: .production(),
+            builtInWorkflowCatalog: .production(
+                processRunner: processRunner,
+                environment: environment,
+                interactiveSessionStore: interactiveSessionStore
+            ),
             externalWorkflowDiscovery: ExternalWorkflowDiscovery(),
             externalWorkflowRunner: ExternalWorkflowRunner(),
-            planningReviewServices: Self.planningReviewServices(
-                environment: ProcessInfo.processInfo.environment,
-                processRunner: DefaultProcessRunner()
-            ),
-            environment: ProcessInfo.processInfo.environment
+            interactiveSessionStore: interactiveSessionStore,
+            environment: environment
         )
     }
 
@@ -38,7 +42,7 @@ final class WorkflowRunnerModel: ObservableObject {
         builtInWorkflowCatalog: BuiltInWorkflowCatalog,
         externalWorkflowDiscovery: ExternalWorkflowDiscovery,
         externalWorkflowRunner: ExternalWorkflowRunner,
-        planningReviewServices: PlanningReviewServices,
+        interactiveSessionStore: WorkflowInteractiveSessionStore,
         environment: [String: String]
     ) {
         self.projectStore = projectStore
@@ -47,7 +51,7 @@ final class WorkflowRunnerModel: ObservableObject {
         self.builtInWorkflowCatalog = builtInWorkflowCatalog
         self.externalWorkflowDiscovery = externalWorkflowDiscovery
         self.externalWorkflowRunner = externalWorkflowRunner
-        self.planningReviewServices = planningReviewServices
+        self.interactiveSessionStore = interactiveSessionStore
         self.environment = environment
 
         let snapshot = projectStore.load()
@@ -145,20 +149,23 @@ final class WorkflowRunnerModel: ObservableObject {
         update {
             $0.isRunning = true
             $0.activeWorkflowID = workflow.id
+            $0.activeWorkflowActivity = .running
             $0.statusMessage = nil
             $0.timelineOutput = "\(workflow.title) started."
             $0.stepRecords = []
             $0.output = ""
             $0.debugLogURL = nil
             $0.lastRunSucceeded = nil
-            $0.planningInteraction = nil
+            $0.interactiveActivity = nil
         }
+        interactiveSessionStore.removeAllSessions()
 
         Task {
             let result = await builtInWorkflow.run(
                 context: BuiltInWorkflowRunContext(
                     project: project,
                     inputValues: builtInInputValues(),
+                    interactiveSessionStore: interactiveSessionStore,
                     progress: { [weak model = self] progress in
                         await model?.applyWorkflowProgress(progress)
                     }
@@ -173,14 +180,16 @@ final class WorkflowRunnerModel: ObservableObject {
         update {
             $0.isRunning = true
             $0.activeWorkflowID = workflow.id
+            $0.activeWorkflowActivity = .running
             $0.statusMessage = "Running \(workflow.title)..."
             $0.timelineOutput = "External workflow started: \(workflow.title)"
             $0.stepRecords = []
             $0.output = ""
             $0.debugLogURL = nil
             $0.lastRunSucceeded = nil
-            $0.planningInteraction = nil
+            $0.interactiveActivity = nil
         }
+        interactiveSessionStore.removeAllSessions()
 
         Task {
             let result = await externalWorkflowRunner.run(
@@ -198,6 +207,7 @@ final class WorkflowRunnerModel: ObservableObject {
                 $0.timelineOutput = result.timeline.isEmpty ? result.output : result.timeline
                 $0.isRunning = false
                 $0.activeWorkflowID = nil
+                $0.activeWorkflowActivity = nil
                 $0.lastRunWorkflowID = workflow.id
                 $0.lastRunSucceeded = result.exitCode == 0
                 $0.statusMessage =
@@ -233,22 +243,19 @@ final class WorkflowRunnerModel: ObservableObject {
         switch result {
         case .completed(let processResult):
             applyCompletedBuiltInWorkflowResult(processResult, workflow: workflow, project: project)
-        case .waiting(let progress, let output):
+        case .waiting(let progress, let output, let activity):
             update {
                 $0.output = output
                 $0.debugLogURL = progress.debugLogURL
                 $0.stepRecords = progress.stepRecords
                 $0.timelineOutput = progress.timeline
-                $0.isRunning = true
+                $0.isRunning = false
                 $0.activeWorkflowID = workflow.id
+                $0.activeWorkflowActivity = Self.activeWorkflowActivity(for: activity)
+                $0.interactiveActivity = activity
                 $0.lastRunWorkflowID = nil
                 $0.lastRunSucceeded = nil
                 $0.statusMessage = nil
-                if workflow.id == PlanningReviewWorkflowRunner.id {
-                    $0.planningInteraction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
-                } else {
-                    $0.planningInteraction = nil
-                }
             }
         }
     }
@@ -265,6 +272,7 @@ final class WorkflowRunnerModel: ObservableObject {
             $0.timelineOutput = result.timeline.isEmpty ? result.output : result.timeline
             $0.isRunning = false
             $0.activeWorkflowID = nil
+            $0.activeWorkflowActivity = nil
             $0.lastRunWorkflowID = workflow.id
             $0.lastRunSucceeded = result.exitCode == 0
             $0.statusMessage =
@@ -306,17 +314,6 @@ final class WorkflowRunnerModel: ObservableObject {
         return WorkflowProject(url: URL(fileURLWithPath: path, isDirectory: true), bookmarkData: nil)
     }
 
-    private static func planningReviewServices(
-        environment: [String: String],
-        processRunner: WorkflowProcessRunning
-    ) -> PlanningReviewServices {
-        PlanningReviewServices(
-            backendAdapter: environment["HEPHAESTUS_PROVIDER"] == "mock"
-                ? MockHarnessBackendAdapter()
-                : CodexHarnessBackendAdapter(processRunner: processRunner)
-        )
-    }
-
     private static func defaultInputValues(for workflow: WorkflowDefinition) -> [String: String] {
         Dictionary(
             uniqueKeysWithValues: workflow.inputs.map {
@@ -329,6 +326,19 @@ final class WorkflowRunnerModel: ObservableObject {
             ImplementationReviewBuiltInWorkflow.planPathInputID: state.implementationPlanPath,
             ImplementationReviewBuiltInWorkflow.buildCommandInputID: state.implementationBuildCommand,
         ]
+    }
+
+    private static func activeWorkflowActivity(
+        for activity: WorkflowInteractiveActivity
+    ) -> ActiveWorkflowActivity {
+        switch activity.status {
+        case .runningAutomation:
+            return .running
+        case .waitingForFinalReview, .accepted:
+            return .waitingForUserReview
+        case .waitingForInput, .waitingForOutputReview, .recoverableFailure, .blocked:
+            return .waitingForInteraction
+        }
     }
 
 }
