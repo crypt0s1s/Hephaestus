@@ -13,7 +13,6 @@ struct PlanningInteractionState: Equatable {
     var workflowID: WorkflowDefinition.ID
     var stepID: String
     var sessionID: String
-    var runtimeRun: WorkflowRun
     var backendSession: BackendSession?
     var title: String
     var subtitle: String
@@ -44,39 +43,12 @@ struct PlanningInteractionState: Equatable {
         self.workflowID = workflowID
         self.stepID = stepID
         self.sessionID = sessionID
-        let pauseID = UUID().uuidString
-        let createdAt = Date()
-        let pause = WorkflowPause(
-            id: pauseID,
-            runID: sessionID,
-            stepID: stepID,
-            reason: .interactiveInput,
-            createdAt: createdAt,
-            resumeCommands: [
-                WorkflowResumeCommand(
-                    runID: sessionID,
-                    pauseID: pauseID,
-                    kind: .submitInteractiveOutput,
-                    label: "Submit plan",
-                    createdAt: createdAt
-                )
-            ]
-        )
-        self.runtimeRun = WorkflowRun(
-            id: sessionID,
-            workflowID: workflowID,
-            status: .paused,
-            startedAt: createdAt,
-            updatedAt: createdAt,
-            activePause: pause
-        )
         self.title = title
         self.subtitle = subtitle
         self.inputPlaceholder = inputPlaceholder
         self.draftTitle = draftTitle
         self.outputCandidate = outputCandidate
         self.entries = initialEntries
-        self.workflowMessages = []
     }
 
     var trimmedNote: String {

@@ -6,7 +6,7 @@
 
 ## Purpose
 
-This checklist translates PRD-0011 acceptance criteria into manual UI checks. The Planning Review Workflow is now implemented as a first-slice prototype, with mock-provider UI coverage for the start and submit happy path plus unit coverage for runtime-owned workflow messages, review cycles, persistence failure, reviewer failure, and continuation behavior.
+This checklist translates PRD-0011 acceptance criteria into manual UI checks. Most checks are not executable yet because the current app only exposes the existing `hello-world` and `implementation-review-loop` workflows. The checklist should become the manual happy-path script as the Planning Review Workflow is implemented.
 
 ## Current Smoke Coverage
 
@@ -20,7 +20,7 @@ This checklist translates PRD-0011 acceptance criteria into manual UI checks. Th
 ## Planning Workflow Availability
 
 - [ ] `AC-1.1`: Given a project is selected, when the workflow list renders, then the Planning Review Workflow is available to start.
-  - Current status: implemented and covered by `HephaestusUITests.testPlanningReviewWorkflowStartsInteractiveWaitingState`.
+  - Current status: testable in the first interactive-pause slice. The workflow should appear as `Planning Review Workflow`.
 
 ## Initial Interactive Planning
 
@@ -28,7 +28,7 @@ This checklist translates PRD-0011 acceptance criteria into manual UI checks. Th
 - [ ] `AC-12.1`: Timeline shows an explicit interactive waiting state while the planner phase is waiting.
 - [ ] Verify the interactive chat surface is visibly attached to the workflow run rather than appearing as an unrelated task session.
 - [ ] Verify navigating away and back preserves the waiting workflow state.
-  - Current status: the waiting state and attached planning surface are implemented and covered by unit/UI tests. Navigation persistence remains a manual check.
+  - Current status: partially testable in the first interactive-pause slice. The workflow can enter a visible waiting state, but workflow-attached chat and real pause/resume are not implemented yet.
 
 ## Submit Plan
 
@@ -36,7 +36,7 @@ This checklist translates PRD-0011 acceptance criteria into manual UI checks. Th
 - [ ] `AC-3.2`: With no reviewable draft, invoking submit-plan keeps the workflow interactive and explains missing content.
 - [ ] `AC-4.1`: The submitted plan message is visible or inspectable from the run.
 - [ ] `AC-12.2`: The timeline or inspector exposes the submitted message reference.
-  - Current status: implemented. Submit-plan materializes `WorkflowMessage` values and persists JSON messages separately from `.hephaestus/planning-review/<session-id>/plan.md`; covered by `PlanningReviewWorkflowTests` and the submit UI test.
+  - Current status: not testable. Runtime-owned `WorkflowMessage` creation and submit-plan UI are not implemented yet.
 
 ## Automated Review Cycles
 
@@ -47,7 +47,7 @@ This checklist translates PRD-0011 acceptance criteria into manual UI checks. Th
 - [ ] `AC-7.2`: If one reviewer fails and another succeeds, consolidated feedback includes successful feedback and records the failed reviewer.
 - [ ] `AC-8.1`: Planner-response work receives the consolidated feedback message.
 - [ ] `AC-8.2`: Reviewer feedback returns to the runtime without granting reviewer sessions file write permission.
-  - Current status: implemented for the first-slice Codex/mock adapter path. Unit tests cover two cycles, current-plan handoff between cycles, partial reviewer failure, all-reviewer failure, persistence failure before planner response, and read-only planner/reviewer turns.
+  - Current status: not testable for Planning Review Workflow. Existing Implementation Review Loop covers reviewer/build loop UI, but it does not use runtime-owned planning messages.
 
 ## Interactive User Review
 
@@ -55,10 +55,10 @@ This checklist translates PRD-0011 acceptance criteria into manual UI checks. Th
 - [ ] `AC-10.1`: Accept records an accepted state and does not start implementation automatically.
 - [ ] `AC-10.2`: Continue planning opens or resumes an interactive planner context with latest plan and feedback history.
 - [ ] `AC-10.3`: Request another cycle starts one additional automated review/planner-response cycle from the latest plan.
-  - Current status: implemented in the first-slice prototype. Unit tests cover accept, continue planning with latest plan and feedback history, and another-cycle failure handling; UI tests cover the happy-path controls appearing after submit.
+  - Current status: not testable. Later interactive review state and controls are not implemented yet.
 
 ## Backend Adapter Boundary
 
 - [ ] `AC-14.1`: Planner or reviewer sessions route through normalized backend events rather than Codex-specific workflow state.
 - [ ] `AC-14.2`: The planning workflow message model remains independent of backend-specific event payloads.
-  - Current status: partially implemented. Planning Review Workflow routes planner, reviewer, and planner-response turns through `HarnessBackendAdapter` and persists backend-independent `WorkflowMessage` payloads. Long-lived Codex app-server sessions and app-owned approval handling remain future work.
+  - Current status: partially covered by code/build tests. The current Codex command path routes through `HarnessBackendAdapter`, but Planning Review Workflow does not exist yet.

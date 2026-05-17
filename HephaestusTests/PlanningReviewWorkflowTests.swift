@@ -228,43 +228,6 @@ struct PlanningReviewWorkflowTests {
     }
 
     @Test
-    func continuePlanningReviewReopensLatestPlanWithFeedbackHistory() async throws {
-        let projectURL = try makeTemporaryPlanningProject()
-        let model = makePlanningReviewModel(projectURL: projectURL)
-        var interaction = PlanningReviewWorkflowRunner.makeInitialInteractionState()
-        interaction.draft = validPlanMarkdown
-        interaction.draftProvenance = .userEdited
-        model.update { $0.planningInteraction = interaction }
-
-        await model.submitPlanningDraftPlan()
-
-        let completedInteraction = try #require(model.state.planningInteraction)
-        let latestPlan = try #require(
-            completedInteraction.workflowMessages.last { $0.kind == .currentPlan }?.currentPlan
-        )
-
-        model.continuePlanningReview()
-
-        let reopenedInteraction = try #require(model.state.planningInteraction)
-        #expect(reopenedInteraction.phase == .idle)
-        #expect(reopenedInteraction.submittedOutput == nil)
-        #expect(reopenedInteraction.draft == latestPlan.content)
-        #expect(reopenedInteraction.draftProvenance == .agentGenerated)
-        #expect(reopenedInteraction.draftRequiresUserEdit)
-        #expect(reopenedInteraction.runtimeRun.activePause?.reason == .interactiveInput)
-        #expect(reopenedInteraction.entries.contains {
-            $0.text.contains("Feedback history:") && $0.text.contains("Planner response:")
-        })
-        #expect(model.state.stepRecords.contains { $0.id == "planning-review-planner-response-2" })
-        #expect(model.state.stepRecords.contains {
-            $0.id == "planning-review-interactive-user-review" && $0.status == .needsFix
-        })
-        #expect(model.state.stepRecords.contains {
-            $0.id == "planning-review-interactive-planning-continued" && $0.status == .inProgress
-        })
-    }
-
-    @Test
     func planningInteractionSubmissionRejectsIncompletePlan() async throws {
         let projectURL = try makeTemporaryPlanningProject()
         let model = makePlanningReviewModel(projectURL: projectURL)

@@ -138,12 +138,14 @@ extension WorkflowRunnerModel {
             $0.activeWorkflowID = PlanningReviewWorkflowRunner.id
             $0.activeWorkflowActivity = .waitingForInteraction
             $0.lastRunSucceeded = nil
-            $0.stepRecords = continuedRecords
+            $0.stepRecords =
+                planningReviewServices.makeWorkflowRunner()
+                .startInteractivePlanning(project: project).stepRecords
             $0.timelineOutput = """
                 Planning Review Workflow reopened.
-                Interactive planning phase resumed with the latest plan and feedback history.
+                Interactive planning phase is waiting for updated input.
                 """
-            $0.statusMessage = continuedPlanningStatusMessage(project: project)
+            $0.statusMessage = "Planning reopened. Submit another draft to restart review cycles."
         }
     }
 
@@ -173,10 +175,6 @@ extension WorkflowRunnerModel {
             cycle: runner.nextAutomationCycleNumber(from: state.stepRecords),
             project: project,
             run: &run,
-            persistMessages: { [weak self] messages in
-                guard let self else { return }
-                try await self.persistPlanningReviewMessagesForAutomation(messages)
-            },
             progress: { [weak model = self] progress in
                 await model?.applyPlanningReviewProgress(progress)
             }

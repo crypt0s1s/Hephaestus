@@ -1,7 +1,5 @@
 import Foundation
 
-typealias PlanningReviewMessagePersistenceHandler = ([WorkflowMessage]) async throws -> Void
-
 protocol PlanningReviewAutomating {
     var reviewCycleCount: Int { get }
     var startedTimeline: String { get }
@@ -17,7 +15,7 @@ protocol PlanningReviewAutomating {
 }
 
 struct PlanningReviewPrototypeAutomation {
-    static let reviewers = ["Reviewer A", "Reviewer B"]
+    private static let reviewers = ["Reviewer A", "Reviewer B"]
     let reviewCycleCount = 2
     let agent: any PlanningAgentRunning
     let artifactStore: any PlanningPlanArtifactMaterializing
@@ -259,19 +257,15 @@ extension PlanningReviewPrototypeAutomation: PlanningReviewAutomating {
             consolidatedOutput: consolidatedOutput,
             successfulReviewerResults: results.filter { $0.result.exitCode == 0 }
         )
-        let message = WorkflowMessage(
-            runID: currentPlanMessage.runID,
-            kind: .plannerResponse,
-            producerStepID: record.id,
-            payload: .plannerResponse(
-                PlannerResponseMessagePayload(
-                    reviewMessageID: reviewMessage.id,
-                    cycle: cycle,
-                    response: result.output,
-                    exitCode: result.exitCode
-                )
-            ),
-            summary: record.summary
+    }
+
+    private func userReviewRecord() -> WorkflowStepRecord {
+        WorkflowStepRecord(
+            id: "planning-review-interactive-user-review",
+            title: "Interactive user review",
+            status: .inProgress,
+            summary: "Automated cycles completed. Waiting for the user to review the latest plan.",
+            sortOrder: 400
         )
     }
 

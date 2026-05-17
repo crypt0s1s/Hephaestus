@@ -7,7 +7,6 @@ nonisolated struct ProcessResult: Equatable {
     let debugLogURL: URL?
     let timedOut: Bool
     let stepRecords: [WorkflowStepRecord]
-    let workflowMessages: [WorkflowMessage]
 
     nonisolated init(
         exitCode: Int32,
@@ -15,8 +14,7 @@ nonisolated struct ProcessResult: Equatable {
         timeline: String = "",
         debugLogURL: URL? = nil,
         timedOut: Bool = false,
-        stepRecords: [WorkflowStepRecord] = [],
-        workflowMessages: [WorkflowMessage] = []
+        stepRecords: [WorkflowStepRecord] = []
     ) {
         self.exitCode = exitCode
         self.output = output
@@ -24,7 +22,6 @@ nonisolated struct ProcessResult: Equatable {
         self.debugLogURL = debugLogURL
         self.timedOut = timedOut
         self.stepRecords = stepRecords
-        self.workflowMessages = workflowMessages
     }
 }
 
@@ -32,18 +29,11 @@ nonisolated struct WorkflowRunProgress: Equatable {
     let timeline: String
     let debugLogURL: URL?
     let stepRecords: [WorkflowStepRecord]
-    let workflowMessages: [WorkflowMessage]
 
-    nonisolated init(
-        timeline: String,
-        debugLogURL: URL?,
-        stepRecords: [WorkflowStepRecord] = [],
-        workflowMessages: [WorkflowMessage] = []
-    ) {
+    nonisolated init(timeline: String, debugLogURL: URL?, stepRecords: [WorkflowStepRecord] = []) {
         self.timeline = timeline
         self.debugLogURL = debugLogURL
         self.stepRecords = stepRecords
-        self.workflowMessages = workflowMessages
     }
 }
 

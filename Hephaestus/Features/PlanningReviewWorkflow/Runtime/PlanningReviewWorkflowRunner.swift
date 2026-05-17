@@ -126,7 +126,6 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
                 cycle: cycle,
                 project: project,
                 run: &run,
-                persistMessages: persistMessages,
                 progress: progress
             )
             guard shouldContinue else { break }
@@ -147,7 +146,6 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
             cycle: cycle,
             project: project,
             run: &run,
-            persistMessages: persistMessages,
             progress: progress
         )
     }
@@ -256,28 +254,6 @@ struct PlanningReviewWorkflowRunner: BuiltInWorkflow {
 
     private func submittedPlanPreview(from output: InteractiveStepOutput) -> String {
         output.artifact.content
-    }
-
-    static func makeSubmittedPlanMessage(
-        runID: WorkflowRun.ID,
-        output: InteractiveStepOutput
-    ) -> WorkflowMessage {
-        WorkflowMessage(
-            id: output.id,
-            runID: runID,
-            kind: .submittedPlan,
-            producerStepID: output.producerStepID,
-            createdAt: output.createdAt,
-            payload: .submittedPlan(
-                SubmittedPlanMessagePayload(
-                    title: output.artifact.title,
-                    contentType: output.artifact.contentType,
-                    content: output.artifact.content,
-                    projectRelativePath: output.artifact.projectRelativePath
-                )
-            ),
-            summary: output.summary
-        )
     }
 
     private func interactivePlanningRecord(
