@@ -77,11 +77,11 @@ final class HephaestusUITests: XCTestCase {
         XCTAssertTrue(waitForEnabled(runButton, timeout: 10))
         runButton.click()
 
-        XCTAssertTrue(app.staticTexts["Implement plan"].waitForExistence(timeout: 120))
-        XCTAssertTrue(app.staticTexts["Build"].waitForExistence(timeout: 30))
-        XCTAssertTrue(app.staticTexts["Reviewer A"].waitForExistence(timeout: 30))
-        XCTAssertTrue(app.staticTexts["Reviewer B"].waitForExistence(timeout: 30))
-        XCTAssertTrue(app.staticTexts["Review gate"].waitForExistence(timeout: 30))
+        XCTAssertTrue(waitForTimelineRow("implement", in: app, timeout: 120))
+        XCTAssertTrue(waitForTimelineRow("build", in: app, timeout: 30))
+        XCTAssertTrue(waitForTimelineRow("review-a", in: app, timeout: 30))
+        XCTAssertTrue(waitForTimelineRow("review-b", in: app, timeout: 30))
+        XCTAssertTrue(waitForTimelineRow("gate", in: app, timeout: 30))
         XCTAssertTrue(
             app.staticTexts["External Implementation Review Example completed for Hephaestus."]
                 .waitForExistence(timeout: 30))
@@ -301,25 +301,6 @@ final class HephaestusUITests: XCTestCase {
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
-    private func waitForElement(containing text: String, in app: XCUIApplication, timeout: TimeInterval) -> Bool {
-        let predicate = NSPredicate(format: "label CONTAINS %@", text)
-        let match = app.descendants(matching: .any).matching(predicate).firstMatch
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if match.exists {
-                return true
-            }
-            let scroll = app.scrollViews["workflow.contentScroll"]
-            if scroll.exists {
-                scroll.swipeUp()
-            } else if app.scrollViews.firstMatch.exists {
-                app.scrollViews.firstMatch.swipeUp()
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
-        }
-        return match.exists
-    }
-
     private func debugLogDirectoryPath(in app: XCUIApplication, timeout: TimeInterval) -> String? {
         let element = app.descendants(matching: .any)["workflow.debugLogPath"]
         let deadline = Date().addingTimeInterval(timeout)
@@ -352,7 +333,11 @@ final class HephaestusUITests: XCTestCase {
         let debugLogDirectory = try XCTUnwrap(debugLogDirectoryPath(in: app, timeout: 10))
         let rawProcessLog = URL(fileURLWithPath: debugLogDirectory, isDirectory: true)
             .appendingPathComponent("raw-process.log")
-        let rawProcessOutput = try String(contentsOf: rawProcessLog, encoding: .utf8)
+        let rawProcessOutput = try waitForFile(
+            at: rawProcessLog,
+            containing: "plain external process output before failure",
+            timeout: 10
+        )
         XCTAssertTrue(rawProcessOutput.contains(#"{"type":"unknownEvent","summary":"bad event from example"}"#))
         XCTAssertTrue(rawProcessOutput.contains("plain external process output before failure"))
     }

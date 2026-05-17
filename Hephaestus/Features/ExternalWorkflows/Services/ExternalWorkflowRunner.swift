@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct ExternalWorkflowRunner {
@@ -103,19 +104,18 @@ struct ExternalWorkflowRunner {
             }
 
             pipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty {
-                    state.consume(data)
-                }
+                state.consumeAvailableData(from: handle)
             }
 
             do {
                 try process.run()
+                try? pipe.fileHandleForWriting.close()
                 Task {
                     try? await Task.sleep(for: .seconds(timeoutSeconds))
                     state.timeout()
                 }
             } catch {
+                try? pipe.fileHandleForWriting.close()
                 state.finish(exitCode: 1, errorOutput: String(describing: error))
             }
         }
@@ -152,95 +152,6 @@ struct ExternalWorkflowRunner {
     }
 }
 
-private actor ExternalWorkflowProgressRecorder {
-    private(set) var timeline = ""
-    private(set) var stepRecords: [WorkflowStepRecord] = []
-    private var recordedEventKeys: Set<String> = []
-    let debugLogURL: URL?
-
-    init(debugLogURL: URL?) {
-        self.debugLogURL = debugLogURL
-    }
-
-    var progress: WorkflowRunProgress {
-        WorkflowRunProgress(timeline: timeline, debugLogURL: debugLogURL, stepRecords: stepRecords)
-    }
-
-    func record(_ event: ExternalWorkflowEvent) {
-        let key = [
-            event.type.rawValue,
-            event.stepID ?? "",
-            event.title ?? "",
-            event.status?.rawValue ?? "",
-            event.summary ?? "",
-        ].joined(separator: "|")
-        guard recordedEventKeys.insert(key).inserted else { return }
-
-        timeline.append(timelineLine(for: event))
-        timeline.append("\n")
-
-        guard let stepID = event.stepID else { return }
-        let status = WorkflowStepRecordStatus(eventStatus: event.status)
-        let title = event.title ?? stepID
-        let summary = event.summary ?? status.rawValue
-
-        if let index = stepRecords.firstIndex(where: { $0.id == stepID }) {
-            stepRecords[index].title = title
-            stepRecords[index].status = status
-            stepRecords[index].summary = summary
-            if let inputPreview = event.inputPreview {
-                stepRecords[index].inputPreview = inputPreview
-            }
-            stepRecords[index].outputPreview = event.outputPreview ?? event.summary
-        } else {
-            stepRecords.append(
-                WorkflowStepRecord(
-                    id: stepID,
-                    title: title,
-                    status: status,
-                    summary: summary,
-                    inputPreview: event.inputPreview,
-                    outputPreview: event.outputPreview ?? event.summary,
-                    sortOrder: stepRecords.count
-                ))
-        }
-    }
-
-    private func timelineLine(for event: ExternalWorkflowEvent) -> String {
-        let title = event.title ?? event.stepID ?? "External workflow"
-        let summary = event.summary.map { " - \($0)" } ?? ""
-        switch event.type {
-        case .workflowStarted:
-            return "External workflow started: \(title)\(summary)"
-        case .workflowFinished:
-            return "External workflow finished: \(title)\(summary)"
-        case .stepStarted:
-            return "\(title) started\(summary)"
-        case .stepFinished:
-            return "\(title) finished\(summary)"
-        case .logChunk:
-            return summary.isEmpty ? title : summary
-        }
-    }
-}
-
-extension WorkflowStepRecordStatus {
-    fileprivate nonisolated init(eventStatus: ExternalWorkflowEventStatus?) {
-        switch eventStatus {
-        case .pending:
-            self = .pending
-        case .inProgress:
-            self = .inProgress
-        case .succeeded:
-            self = .succeeded
-        case .failed:
-            self = .failed
-        case nil:
-            self = .pending
-        }
-    }
-}
-
 private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendable {
     private let process: Process
     private let pipe: Pipe
@@ -254,6 +165,7 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
     private var output = ""
     private var lineBuffer = ""
     private var didResume = false
+    private var didRequestTimeout = false
 
     init(
         process: Process,
@@ -273,24 +185,40 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
         self.continuation = continuation
     }
 
-    func consume(_ data: Data) {
-        guard let chunk = String(data: data, encoding: .utf8) else { return }
-        let completedLines = lock.withLock {
-            output.append(chunk)
-            lineBuffer.append(chunk)
-            return takeCompletedLines()
+    func consumeAvailableData(from handle: FileHandle) {
+        let drain = lock.withLock {
+            guard !didResume else { return PipeDrain() }
+            return drainAvailableData(from: handle)
         }
+        record(drain)
+    }
+
+    func consume(_ data: Data) {
+        let drain = lock.withLock {
+            guard !didResume else { return PipeDrain() }
+            return append(data)
+        }
+        record(drain)
+    }
+
+    private func record(_ drain: PipeDrain) {
+        guard !drain.chunks.isEmpty || !drain.completedLines.isEmpty else { return }
         Task {
-            await debugLog.append(chunk)
-            await debugLog.append(chunk, to: "raw-process.log")
-            for line in completedLines {
-                guard let event = lineInterpreter.event(from: line) else { continue }
-                await recorder.record(event)
-                if let progress {
-                    let snapshot = await recorder.progress
-                    await progress(snapshot)
-                }
+            for chunk in drain.chunks {
+                await debugLog.append(chunk)
             }
+            for line in drain.completedLines {
+                await recordEventLine(line)
+            }
+        }
+    }
+
+    private func recordEventLine(_ line: String) async {
+        guard let event = lineInterpreter.event(from: line) else { return }
+        await recorder.record(event)
+        if let progress {
+            let snapshot = await recorder.progress
+            await progress(snapshot)
         }
     }
 
@@ -299,46 +227,79 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
         errorOutput: String? = nil,
         failureEvent: ExternalWorkflowEvent? = nil
     ) {
-        let result: ProcessResult? = lock.withLock {
-            guard !didResume else { return nil }
-            didResume = true
-            pipe.fileHandleForReading.readabilityHandler = nil
-            if let errorOutput {
-                output.append(errorOutput)
-            }
-            return ProcessResult(exitCode: exitCode, output: output)
-        }
-
-        if let result {
+        let finishData = processCompletion(exitCode: exitCode, errorOutput: errorOutput, failureEvent: failureEvent)
+        if let finishData {
             Task {
-                if let errorOutput {
-                    await debugLog.append(errorOutput)
-                    await debugLog.append(errorOutput, to: "raw-process.log")
-                }
-                await replayEventLines(from: result.output)
-                if result.exitCode != 0 {
-                    await recorder.record(failureEvent ?? .processExitFailure(exitCode: result.exitCode))
-                }
+                await debugLog.replace(finishData.result.output, in: "raw-process.log")
+                await replayEventLines(from: finishData.result.output)
+                await recordFailureIfNeeded(finishData)
                 let finalProgress = await recorder.progress
-                continuation.resume(
-                    returning: ProcessResult(
-                        exitCode: result.exitCode,
-                        output: result.output,
-                        timeline: finalProgress.timeline,
-                        debugLogURL: finalProgress.debugLogURL,
-                        stepRecords: finalProgress.stepRecords
-                    ))
+                continuation.resume(returning: resolvedResult(from: finishData.result, progress: finalProgress))
             }
         }
     }
 
-    func timeout() {
+    private func processCompletion(
+        exitCode: Int32, errorOutput: String?, failureEvent: ExternalWorkflowEvent?
+    ) -> (result: ProcessResult, failureEvent: ExternalWorkflowEvent?)? {
         lock.withLock {
-            guard !didResume, process.isRunning else { return }
-            process.terminate()
+            guard !didResume else { return nil }
+            pipe.fileHandleForReading.readabilityHandler = nil
+            _ = drainAvailableData(from: pipe.fileHandleForReading)
+            didResume = true
+            let resolvedExitCode = didRequestTimeout ? 124 : exitCode
+            let resolvedFailureEvent = didRequestTimeout
+                ? ExternalWorkflowEvent.processTimeout(seconds: timeoutSeconds)
+                : failureEvent
+            let resolvedErrorOutput = didRequestTimeout
+                ? "\n\(ExternalWorkflowEvent.timeoutSummary(seconds: timeoutSeconds))"
+                : errorOutput
+            if let errorOutput {
+                output.append(errorOutput)
+            }
+            if didRequestTimeout, let resolvedErrorOutput {
+                output.append(resolvedErrorOutput)
+            }
+            return (ProcessResult(exitCode: resolvedExitCode, output: output), resolvedFailureEvent)
         }
-        let message = "\n\(ExternalWorkflowEvent.timeoutSummary(seconds: timeoutSeconds))"
-        finish(exitCode: 124, errorOutput: message, failureEvent: .processTimeout(seconds: timeoutSeconds))
+    }
+
+    private func recordFailureIfNeeded(_ finishData: (result: ProcessResult, failureEvent: ExternalWorkflowEvent?)) async {
+        guard finishData.result.exitCode != 0 else { return }
+        await recorder.record(
+            finishData.failureEvent ?? .processExitFailure(exitCode: finishData.result.exitCode)
+        )
+    }
+
+    private func resolvedResult(from result: ProcessResult, progress finalProgress: WorkflowRunProgress) -> ProcessResult {
+        ProcessResult(
+            exitCode: result.exitCode,
+            output: result.output,
+            timeline: finalProgress.timeline,
+            debugLogURL: finalProgress.debugLogURL,
+            stepRecords: finalProgress.stepRecords
+        )
+    }
+
+    func timeout() {
+        let shouldTerminate = lock.withLock {
+            guard !didResume, !didRequestTimeout, process.isRunning else { return false }
+            didRequestTimeout = true
+            return true
+        }
+        guard shouldTerminate else { return }
+        process.terminate()
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            forceKillIfStillRunning()
+        }
+    }
+
+    private func forceKillIfStillRunning() {
+        lock.withLock {
+            guard !didResume, didRequestTimeout, process.isRunning else { return }
+            kill(process.processIdentifier, SIGKILL)
+        }
     }
 
     private func replayEventLines(from output: String) async {
@@ -355,5 +316,36 @@ private nonisolated final class ExternalWorkflowProcessState: @unchecked Sendabl
             lineBuffer.removeSubrange(...newlineIndex)
         }
         return lines
+    }
+
+    private func drainAvailableData(from handle: FileHandle) -> PipeDrain {
+        let fileDescriptor = handle.fileDescriptor
+        let flags = fcntl(fileDescriptor, F_GETFL)
+        if flags >= 0 {
+            _ = fcntl(fileDescriptor, F_SETFL, flags | O_NONBLOCK)
+        }
+        defer {
+            if flags >= 0 {
+                _ = fcntl(fileDescriptor, F_SETFL, flags)
+            }
+        }
+
+        var drain = PipeDrain()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let count = read(fileDescriptor, &buffer, buffer.count)
+            guard count >= 1 else { break }
+            drain.append(append(Data(buffer.prefix(count))))
+        }
+        return drain
+    }
+
+    private func append(_ data: Data) -> PipeDrain {
+        guard let chunk = String(data: data, encoding: .utf8), !chunk.isEmpty else {
+            return PipeDrain()
+        }
+        output.append(chunk)
+        lineBuffer.append(chunk)
+        return PipeDrain(chunks: [chunk], completedLines: takeCompletedLines())
     }
 }

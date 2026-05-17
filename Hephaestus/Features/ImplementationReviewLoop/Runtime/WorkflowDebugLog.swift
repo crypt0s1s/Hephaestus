@@ -34,6 +34,17 @@ actor WorkflowDebugLog {
         append(text, to: fileURL(for: fileName))
     }
 
+    func replace(_ text: String, in fileName: String) {
+        guard let data = text.data(using: .utf8) else {
+            return
+        }
+        let url = fileURL(for: fileName)
+        if !fileManager.fileExists(atPath: url.path) {
+            fileManager.createFile(atPath: url.path, contents: nil)
+        }
+        try? data.write(to: url, options: .atomic)
+    }
+
     private func append(_ text: String, to url: URL) {
         guard let data = text.data(using: .utf8) else {
             return

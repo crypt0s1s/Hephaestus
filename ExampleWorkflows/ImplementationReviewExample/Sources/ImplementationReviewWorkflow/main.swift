@@ -150,6 +150,11 @@ do {
             exit(42)
         }
 
+        if scenario == "timeout" {
+            writeRawLine("external workflow entered timeout scenario")
+            Thread.sleep(forTimeInterval: 300)
+        }
+
         emit(
             workflowEvent(
                 type: "stepStarted",

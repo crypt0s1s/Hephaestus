@@ -162,16 +162,17 @@ workflow event plus captured debug logs.
   "id": "implementation-review",
   "name": "Implementation Review Loop",
   "version": "0.1.0",
+  "summary": "Runs implementation, build, review, and gate phases.",
   "inputs": [
     { "id": "planPath", "type": "string", "label": "Plan path" },
-    { "id": "buildCommand", "type": "string", "label": "Build command", "default": "swift build" }
+    { "id": "buildCommand", "type": "string", "label": "Build command", "defaultValue": "swift build" }
   ],
   "steps": [
-    { "id": "implement", "title": "Implement plan" },
-    { "id": "build", "title": "Build" },
-    { "id": "review-a", "title": "Reviewer A" },
-    { "id": "review-b", "title": "Reviewer B" },
-    { "id": "gate", "title": "Review gate" }
+    { "id": "implement", "title": "Implement plan", "summary": "Applies the requested implementation." },
+    { "id": "build", "title": "Build", "summary": "Runs the build or test command." },
+    { "id": "review-a", "title": "Reviewer A", "summary": "Runs the first reviewer." },
+    { "id": "review-b", "title": "Reviewer B", "summary": "Runs the second reviewer." },
+    { "id": "gate", "title": "Review gate", "summary": "Combines reviewer outcomes." }
   ]
 }
 ```
@@ -179,11 +180,11 @@ workflow event plus captured debug logs.
 `run` emits JSON Lines events:
 
 ```jsonl
-{"type":"workflowStarted","runID":"...","workflowID":"implementation-review"}
+{"type":"workflowStarted","title":"Implementation Review Loop","status":"inProgress","summary":"Started."}
 {"type":"stepStarted","stepID":"implement","title":"Implement plan"}
 {"type":"stepFinished","stepID":"implement","status":"succeeded","summary":"Changed 3 files."}
 {"type":"stepStarted","stepID":"review-a","title":"Reviewer A"}
-{"type":"reviewResult","stepID":"review-a","status":"needsChanges","findings":[...]}
+{"type":"stepFinished","stepID":"review-a","status":"failed","summary":"Reviewer A reported blocking findings.","outputPreview":"P1: Fix timeout handling."}
 {"type":"workflowFinished","status":"failed","summary":"Reviewer A reported blocking findings."}
 ```
 
@@ -263,12 +264,10 @@ Define shared contracts before implementing the external runner:
 - `WorkflowRunInput`
 - `WorkflowEvent`
 - `WorkflowEventStatus`
-- `ReviewResult`
-- `ReviewFinding`
-- `BuildResult`
-- `ImplementationResult`
 
-These should be `Codable` and stable enough for both built-in and external workflow runners.
+These should be `Codable` and stable enough for both built-in and external workflow runners. Typed
+implementation, build, and review result payloads are deliberately deferred until the generic event
+stream has proved the process boundary and UI projection.
 
 ### Early Spike
 
@@ -318,6 +317,7 @@ For the spike, validation is local and manual:
 - run workflow protocol unit tests,
 - run the fake external workflow directly from Terminal,
 - run the fake external workflow through the app,
+- run the fake external workflow with `scenario=timeout` and a short app timeout override,
 - confirm malformed events and nonzero exit paths are visible in the UI.
 
 ---
